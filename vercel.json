@@ -1,8 +1,0 @@
-{
-  "version": 2,
-  "functions": {
-    "api/[[...slug]].js": {
-      "maxDuration": 60
-    }
-  }
-}
