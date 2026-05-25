@@ -1,0 +1,2500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASR 转写与 AI 修正评估平台</title>
+<script src="https://cdn.jsdelivr.net/npm/diff-match-patch@1.0.5/index.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{
+  -webkit-user-select:none;
+  -moz-user-select:none;
+  -ms-user-select:none;
+  user-select:none;
+}
+.asr-text,.asr-text *,[data-selectable],[data-selectable] *{
+  -webkit-user-select:text;
+  -moz-user-select:text;
+  -ms-user-select:text;
+  user-select:text;
+}
+:root{
+  --bg:#F5F5F7;
+  --primary:#A8D8EA;--primary-dark:#7EC8E3;
+  --asr:#B8E6C8;--asr-dark:#8DD3A8;
+  --ai:#F2C4CE;--ai-dark:#E8A0B0;
+  --text:#1D1D1F;--text-secondary:#6E6E73;
+  --glass-bg:rgba(255,255,255,0.45);
+  --glass-border:rgba(255,255,255,0.5);
+  --glass-blur:blur(24px) saturate(180%);
+  --radius-card:20px;--radius-btn:12px;--radius-input:12px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'SF Mono','Fira Code','Menlo',monospace;
+}
+html,body{height:100%;font-family:var(--font);color:var(--text);background:var(--bg);overflow:hidden}
+body{
+  background:
+    radial-gradient(ellipse 600px 400px at 15% 20%,rgba(168,216,234,0.12),transparent),
+    radial-gradient(ellipse 500px 500px at 80% 30%,rgba(184,230,200,0.10),transparent),
+    radial-gradient(ellipse 600px 400px at 50% 85%,rgba(242,196,206,0.10),transparent),
+    var(--bg);
+}
+
+.glass{
+  background:var(--glass-bg);
+  backdrop-filter:var(--glass-blur);
+  -webkit-backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius-card);
+  box-shadow:0 4px 16px rgba(0,0,0,0.04),0 1px 4px rgba(0,0,0,0.02),inset 0 1px 0 rgba(255,255,255,0.6);
+  transition:all 300ms cubic-bezier(0.4,0,0.2,1);
+  position:relative;
+  overflow:hidden;
+}
+.glass::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.8) 30%,rgba(255,255,255,0.8) 70%,transparent);
+  z-index:1;
+}
+.glass:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(0,0,0,0.06),0 2px 8px rgba(0,0,0,0.03);
+}
+
+.nav-bar{
+  position:fixed;top:0;left:0;right:0;z-index:50;
+  height:64px;display:flex;align-items:center;padding:0 28px;gap:12px;
+  background:linear-gradient(135deg,rgba(255,255,255,0.7) 0%,rgba(255,255,255,0.5) 100%);
+  backdrop-filter:blur(28px) saturate(200%);
+  -webkit-backdrop-filter:blur(28px) saturate(200%);
+  border-bottom:1px solid rgba(168,216,234,0.3);
+  box-shadow:0 2px 16px rgba(0,0,0,0.05),0 1px 4px rgba(0,0,0,0.03);
+}
+.nav-logo{
+  font-size:19px;font-weight:800;
+  background:linear-gradient(135deg,var(--primary-dark) 0%,#5BC0BE 100%);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  white-space:nowrap;letter-spacing:-0.2px;
+  display:flex;align-items:center;gap:10px;
+  position:relative;
+}
+.nav-logo::after{
+  content:'';position:absolute;right:-16px;top:50%;transform:translateY(-50%);
+  width:1px;height:28px;background:linear-gradient(180deg,transparent,rgba(168,216,234,0.5),transparent);
+}
+.nav-logo svg{
+  width:26px;height:26px;
+  filter:drop-shadow(0 2px 4px rgba(126,200,227,0.3));
+  transition:transform 300ms ease;
+}
+.nav-logo:hover svg{transform:rotate(-8deg) scale(1.05)}
+.nav-tabs{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  display:flex;gap:6px;
+}
+.nav-tab{
+  padding:9px 22px;border-radius:var(--radius-btn);
+  font-size:14px;font-weight:500;cursor:pointer;
+  color:var(--text-secondary);border:none;background:transparent;
+  transition:all 250ms cubic-bezier(0.4,0,0.2,1);position:relative;white-space:nowrap;
+}
+.nav-tab:hover{background:rgba(168,216,234,0.12);color:var(--text);transform:translateY(-1px)}
+.nav-tab.active{
+  background:linear-gradient(135deg,rgba(168,216,234,0.2) 0%,rgba(126,200,227,0.15) 100%);
+  color:var(--primary-dark);font-weight:600;
+  box-shadow:0 2px 8px rgba(168,216,234,0.2);
+}
+.nav-tab.active::after{
+  content:'';position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
+  width:24px;height:2px;border-radius:1px;
+  background:linear-gradient(90deg,transparent,var(--primary-dark),transparent);
+}
+.nav-settings{
+  width:38px;height:38px;border-radius:12px;border:none;
+  background:rgba(168,216,234,0.08);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  color:var(--text-secondary);transition:all 250ms cubic-bezier(0.4,0,0.2,1);
+  position:relative;overflow:hidden;
+}
+.nav-settings::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(168,216,234,0.15),rgba(126,200,227,0.1));
+  opacity:0;transition:opacity 250ms;
+}
+.nav-settings:hover{
+  background:rgba(168,216,234,0.15);
+  color:var(--primary-dark);
+  transform:rotate(45deg) scale(1.05);
+  box-shadow:0 2px 8px rgba(168,216,234,0.2);
+}
+.nav-settings:hover::before{opacity:1}
+.nav-settings svg{width:18px;height:18px;position:relative;z-index:1}
+
+.main-content{
+  position:fixed;top:64px;left:0;right:0;bottom:72px;
+  overflow:hidden;padding:0;
+  scroll-behavior:smooth;
+  touch-action:pan-y;
+}
+.tab-container{
+  display:flex;width:200%;height:100%;
+  transition:transform 300ms cubic-bezier(0.4,0,0.2,1);
+}
+.tab-container.swiping{
+  transition:none;
+}
+.tab-view{
+  width:50%;height:100%;overflow-y:auto;padding:24px;
+  flex-shrink:0;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+}
+.tab-view::-webkit-scrollbar{
+  display:none;
+}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.upload-area{
+  padding:48px 24px;text-align:center;cursor:pointer;
+  border:2px dashed rgba(168,216,234,0.5);
+  transition:all 300ms ease;margin-bottom:20px;
+}
+.upload-area.drag-over{
+  border-color:var(--primary-dark);
+  background:rgba(168,216,234,0.08);
+  animation:breathe 1.5s ease-in-out infinite;
+}
+@keyframes breathe{0%,100%{border-color:rgba(168,216,234,0.5)}50%{border-color:var(--primary-dark)}}
+.upload-icon{margin-bottom:12px;color:var(--primary-dark)}
+.upload-icon svg{width:48px;height:48px}
+.upload-title{font-size:16px;font-weight:600;margin-bottom:4px}
+.upload-subtitle{font-size:13px;color:var(--text-secondary)}
+
+.audio-url-row{
+  display:flex;gap:0;margin-bottom:20px;align-items:center;
+  padding:6px;border-radius:var(--radius-input);
+  border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);
+  transition:border-color 200ms,box-shadow 200ms;
+}
+.audio-url-row:focus-within{
+  border-color:var(--primary-dark);
+  box-shadow:0 0 0 3px rgba(92,182,227,0.1);
+}
+.audio-url-row input{
+  flex:1;padding:6px 12px;border:none;background:transparent;
+  font-size:13px;font-family:var(--font);outline:none;
+}
+.audio-url-row input::placeholder{color:var(--text-secondary)}
+.audio-url-row .add-btn{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:8px;border:none;
+  background:rgba(92,182,227,0.1);
+  cursor:pointer;color:var(--primary-dark);transition:all 200ms;
+  flex-shrink:0;
+}
+.audio-url-row .add-btn:hover{
+  background:rgba(92,182,227,0.15);
+  transform:scale(1.05);
+}
+.audio-url-row .add-btn svg{width:18px;height:18px}
+
+.btn{
+  padding:10px 20px;border-radius:var(--radius-btn);
+  border:none;font-size:13px;font-weight:600;cursor:pointer;
+  transition:all 200ms ease;font-family:var(--font);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+}
+.btn-primary{background:var(--primary);color:#1D1D1F}
+.btn-primary:hover{background:var(--primary-dark);color:#fff}
+.btn-asr{background:var(--asr);color:#1D1D1F}
+.btn-asr:hover{background:var(--asr-dark);color:#fff}
+.btn-ai{background:var(--ai);color:#1D1D1F}
+.btn-ai:hover{background:var(--ai-dark);color:#fff}
+.btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid rgba(0,0,0,0.08)}
+.btn-ghost:hover{background:rgba(0,0,0,0.03);color:var(--text)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn svg{width:16px;height:16px}
+
+.audio-list{display:flex;flex-direction:column;gap:10px}
+.audio-item{
+  padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;
+}
+.audio-item.selected{background:rgba(168,216,234,0.18);border-color:rgba(168,216,234,0.4)}
+.audio-item-icon{width:40px;height:40px;border-radius:10px;background:rgba(168,216,234,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.audio-item-icon svg{width:20px;height:20px;color:var(--primary-dark)}
+.audio-item-info{flex:1;min-width:0}
+.audio-item-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.audio-item-meta{font-size:12px;color:var(--text-secondary);margin-top:2px;display:flex;gap:12px}
+.audio-item-actions{display:flex;gap:6px;flex-shrink:0}
+.audio-item-actions .btn-sm{opacity:0;transition:opacity 200ms}
+.audio-item:hover .audio-item-actions .btn-sm{opacity:1}
+
+.player-bar{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;
+  height:72px;display:flex;align-items:center;padding:0 24px;gap:16px;
+  background:rgba(255,255,255,0.55);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-top:1px solid rgba(255,255,255,0.5);
+  box-shadow:0 -1px 8px rgba(0,0,0,0.03);
+}
+.player-play{
+  width:40px;height:40px;border-radius:50%;border:none;
+  background:var(--primary);cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:all 200ms;flex-shrink:0;
+}
+.player-play:hover{background:var(--primary-dark);transform:scale(1.05)}
+.player-play svg{width:18px;height:18px;color:#1D1D1F;fill:currentColor}
+.player-progress{flex:1;display:flex;align-items:center;gap:10px}
+.player-time{font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);min-width:42px;text-align:center}
+.player-slider{
+  flex:1;height:6px;border-radius:3px;background:rgba(0,0,0,0.06);
+  position:relative;cursor:pointer;overflow:hidden;
+}
+.player-slider-fill{
+  height:100%;background:var(--primary);border-radius:3px;
+  transition:width 100ms linear;pointer-events:none;
+}
+.player-slider-thumb{
+  width:14px;height:14px;border-radius:50%;background:#fff;
+  border:2px solid var(--primary-dark);position:absolute;top:50%;
+  transform:translate(-50%,-50%);pointer-events:none;
+  box-shadow:0 1px 4px rgba(0,0,0,0.1);transition:left 100ms linear;
+}
+.player-name{font-size:13px;font-weight:500;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.player-speed-wrapper{position:relative;flex-shrink:0}
+.player-speed{
+  padding:4px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.08);
+  background:rgba(255,255,255,0.6);font-size:12px;font-weight:600;
+  cursor:pointer;color:var(--text-secondary);transition:all 200ms;
+  font-family:var(--font-mono);
+}
+.player-speed:hover{background:rgba(168,216,234,0.2);color:var(--primary-dark);border-color:var(--primary-dark)}
+.player-speed-menu{
+  position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:rgba(255,255,255,0.85);backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border:1px solid rgba(255,255,255,0.5);border-radius:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.08),0 2px 8px rgba(0,0,0,0.04);
+  padding:6px;min-width:80px;display:none;z-index:60;
+  animation:menuIn 200ms ease;
+}
+.player-speed-menu.show{display:block}
+@keyframes menuIn{from{opacity:0;transform:translateX(-50%) translateY(4px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.player-speed-option{
+  padding:8px 16px;text-align:center;font-size:12px;font-weight:600;
+  font-family:var(--font-mono);cursor:pointer;border-radius:8px;
+  color:var(--text-secondary);transition:all 150ms;
+}
+.player-speed-option:hover{background:rgba(168,216,234,0.25);color:var(--primary-dark)}
+.player-speed-option.active{color:var(--primary-dark);background:rgba(168,216,234,0.18)}
+
+.modal-overlay{
+  position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.25);
+  backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;
+  animation:modalBgIn 200ms ease;
+}
+.modal-overlay.show{display:flex}
+@keyframes modalBgIn{from{opacity:0}to{opacity:1}}
+.modal{
+  width:90%;max-width:480px;padding:28px;
+  animation:modalIn 300ms cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes modalIn{from{opacity:0;transform:scale(0.95) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:16px}
+.modal textarea{
+  width:100%;min-height:120px;padding:12px;border-radius:var(--radius-input);
+  border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);
+  font-size:14px;font-family:var(--font-mono);resize:vertical;outline:none;
+  transition:border-color 200ms;
+}
+.modal textarea:focus{border-color:var(--primary-dark)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+.settings-panel{
+  position:fixed;top:64px;right:0;width:360px;bottom:0;z-index:60;
+  padding:24px;overflow-y:auto;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+  background:rgba(255,255,255,0.65);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-left:1px solid rgba(255,255,255,0.5);
+  box-shadow:-4px 0 16px rgba(0,0,0,0.04);
+  transform:translateX(100%);transition:transform 300ms cubic-bezier(0.4,0,0.2,1);
+}
+.settings-panel::-webkit-scrollbar{
+  display:none;
+}
+.settings-panel.open{transform:translateX(0)}
+.settings-title{font-size:18px;font-weight:700;margin-bottom:20px}
+.settings-group{margin-bottom:20px}
+.settings-label{font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.settings-row{display:flex;align-items:center;gap:10px}
+.toggle{
+  width:44px;height:24px;border-radius:12px;background:rgba(0,0,0,0.1);
+  cursor:pointer;position:relative;transition:background 200ms;border:none;flex-shrink:0;
+}
+.toggle.on{background:var(--primary)}
+.toggle-knob{
+  width:20px;height:20px;border-radius:50%;background:#fff;
+  position:absolute;top:2px;left:2px;transition:left 200ms;
+  box-shadow:0 1px 3px rgba(0,0,0,0.15);
+}
+.toggle.on .toggle-knob{left:22px}
+.input-with-btn{display:flex;gap:6px;flex:1}
+.input-with-btn input{
+  flex:1;padding:8px 12px;border-radius:var(--radius-input);
+  border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);
+  font-size:13px;font-family:var(--font);outline:none;transition:border-color 200ms;
+}
+.input-with-btn input:focus{border-color:var(--primary-dark)}
+.input-with-btn button{
+  width:32px;height:32px;border-radius:8px;border:none;
+  background:rgba(0,0,0,0.04);cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:background 200ms;flex-shrink:0;
+}
+.input-with-btn button:hover{background:rgba(0,0,0,0.08)}
+.input-with-btn button svg{width:16px;height:16px;color:var(--text-secondary)}
+.placeholder-view{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:400px;text-align:center;
+}
+.placeholder-icon{margin-bottom:16px;color:var(--text-secondary)}
+.placeholder-icon svg{width:64px;height:64px}
+.placeholder-text{font-size:18px;font-weight:600;color:var(--text-secondary)}
+.placeholder-sub{font-size:13px;color:var(--text-secondary);margin-top:6px;opacity:0.6}
+
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.pulse{animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)}}
+.status-dot.success{background:var(--asr-dark)}
+.status-dot.error{background:var(--ai-dark)}
+.status-dot.progress{background:var(--primary-dark);animation:pulse 1.5s ease-in-out infinite}
+.status-icon{display:inline-block;margin-right:6px;vertical-align:middle}
+.status-icon svg{width:14px;height:14px}
+.status-icon.success svg{color:var(--asr-dark)}
+.status-icon.error svg{color:var(--ai-dark)}
+
+.empty-state{text-align:center;padding:60px 24px;color:var(--text-secondary)}
+.empty-state svg{width:48px;height:48px;margin-bottom:12px;opacity:0.4}
+.empty-state p{font-size:14px}
+
+.section-title{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section-title svg{width:18px;height:18px;color:var(--primary-dark)}
+
+.export-row{display:flex;gap:8px;margin-top:16px}
+
+.transcribe-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.transcribe-audio-name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.asr-cards{display:flex;flex-direction:column;gap:16px}
+.asr-card{padding:0;overflow:visible}
+.asr-card-header{padding:14px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(0,0,0,0.04)}
+.asr-card-body{padding:16px 18px}
+.asr-card-footer{padding:10px 18px;display:flex;justify-content:flex-end;border-top:1px solid rgba(0,0,0,0.04)}
+.model-tag{padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600}
+.model-tag.asr{background:rgba(184,230,200,0.3);color:var(--asr-dark)}
+.model-tag.ai{background:rgba(168,216,234,0.3);color:var(--asr-dark)}
+.status-text{font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px}
+.time-text{font-size:12px;color:var(--text-secondary);margin-left:auto;font-family:var(--font-mono)}
+.asr-text{font-family:var(--font-mono);font-size:14px;line-height:1.7;min-height:60px;white-space:pre-wrap;word-break:break-all;outline:none;padding:8px;border-radius:8px;transition:background 200ms}
+.asr-text:focus{background:rgba(255,255,255,0.3)}
+.asr-text.streaming{color:var(--text-secondary)}
+
+.correct-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.correct-grid{display:grid;grid-template-columns:1fr;gap:16px}
+.ai-column{display:flex;flex-direction:column;gap:12px}
+.ai-column-title{font-size:13px;font-weight:700;text-align:center;padding:8px;border-radius:10px;background:rgba(242,196,206,0.15);color:var(--ai-dark)}
+.ai-card{padding:0;overflow:visible}
+.ai-card-header{padding:12px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(0,0,0,0.04);flex-wrap:wrap}
+.ai-card-body{padding:14px}
+.ai-card-footer{padding:8px 14px;display:flex;justify-content:flex-end;border-top:1px solid rgba(0,0,0,0.04)}
+.asr-source-tag{font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(184,230,200,0.2);color:var(--asr-dark)}
+.highlight-diff{background:rgba(242,196,206,0.3);border-radius:2px;padding:0 1px}
+
+.spin-icon{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+.no-audio-hint{text-align:center;padding:80px 24px;color:var(--text-secondary)}
+.no-audio-hint svg{width:48px;height:48px;margin-bottom:12px;opacity:0.4}
+.no-audio-hint p{font-size:14px}
+
+
+.toggle-switch{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none}
+.toggle-switch input{display:none}
+.toggle-switch .toggle-track{
+  width:36px;height:20px;border-radius:10px;background:rgba(0,0,0,0.1);
+  position:relative;transition:background 200ms;
+}
+.toggle-switch input:checked+.toggle-track{background:var(--primary)}
+.toggle-switch .toggle-track::after{
+  content:'';width:16px;height:16px;border-radius:50%;background:#fff;
+  position:absolute;top:2px;left:2px;transition:left 200ms;
+  box-shadow:0 1px 3px rgba(0,0,0,0.15);
+}
+.toggle-switch input:checked+.toggle-track::after{left:18px}
+
+.score-section{margin-top:12px;padding-top:12px;border-top:1px solid rgba(0,0,0,0.04)}
+.score-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.score-label{font-size:12px;color:var(--text-secondary);min-width:48px}
+.score-slider{
+  flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;
+  background:rgba(0,0,0,0.08);outline:none;cursor:pointer;
+}
+.score-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--primary);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.15);
+}
+.score-value{font-size:12px;font-weight:600;min-width:20px;text-align:center;font-family:var(--font-mono)}
+
+.model-selector-item{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;
+  border-radius:10px;background:rgba(255,255,255,0.4);border:1px solid rgba(0,0,0,0.06);
+  transition:all 200ms;
+}
+.model-selector-item:hover{background:rgba(255,255,255,0.6);box-shadow:0 2px 8px rgba(0,0,0,0.04)}
+.model-selector-toggle{flex-shrink:0}
+.model-selector-info{flex:1;min-width:0}
+.model-selector-name{font-size:13px;font-weight:600}
+.model-selector-scheme{font-size:11px;color:var(--text-secondary);margin-top:1px}
+
+.ai-card{transition:box-shadow 200ms}
+.ai-card:hover{box-shadow:0 4px 16px rgba(0,0,0,0.08)}
+.ai-card.dragging-ghost{opacity:0.3;border:1px dashed var(--primary)}
+.ai-card.drag-over-top{border-top:3px solid var(--primary)}
+.ai-card.drag-over-bottom{border-bottom:3px solid var(--primary)}
+.ai-card-drag-handle{
+  width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+  color:var(--text-secondary);flex-shrink:0;cursor:grab;padding:4px;border-radius:4px;
+  opacity:0.4;transition:opacity 200ms;
+}
+.ai-card:hover .ai-card-drag-handle{opacity:0.8}
+.ai-card-drag-handle:hover{opacity:1!important;background:rgba(0,0,0,0.06)}
+.ai-card-drag-handle svg{width:14px;height:14px}
+.ai-card-drag-placeholder{
+  border:2px dashed var(--primary);border-radius:16px;background:rgba(168,216,234,0.1);
+  min-height:100px;transition:all 150ms;
+}
+.ai-drag-ghost{
+  position:fixed;z-index:9999;pointer-events:none;opacity:0.85;
+  box-shadow:0 8px 32px rgba(0,0,0,0.15);border-radius:16px;
+  width:var(--ghost-width,300px);
+}
+
+
+</style>
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="nav-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    ASR 评估
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-tab="library">音频库</button>
+    <button class="nav-tab" data-tab="transcribe-correct">转写与修正</button>
+  </div>
+  <button class="nav-settings" id="settingsBtn" title="设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</nav>
+
+<div class="main-content">
+  <div class="tab-container" id="tabContainer">
+  <div class="tab-view" id="tab-library">
+    <div class="audio-url-row">
+      <input type="text" id="audioUrlInput" placeholder="输入音频公网 URL（用于豆包/千问 ASR）">
+      <button class="add-btn" id="addUrlBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="section-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      音频列表
+    </div>
+    <div class="audio-list" id="audioList">
+      <div class="empty-state" id="emptyAudio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+        <p>暂无音频，请添加音频 URL</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-view" id="tab-transcribe-correct">
+    <div class="no-audio-hint" id="tcNoAudio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+      <p>请先在音频库中选择一个音频</p>
+    </div>
+    <div id="tcContent" style="display:none">
+      <div class="transcribe-header">
+        <div class="transcribe-audio-name">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;color:var(--primary-dark)"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span id="tcAudioName">--</span>
+        </div>
+        <button class="btn btn-primary" id="startTcBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3 19,12 5,21"/></svg>
+          开始转写并修正
+        </button>
+      </div>
+      <div class="section-title" style="margin-top:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+        ASR 转写结果
+      </div>
+      <div class="asr-cards" id="tcAsrCards">
+        <div class="glass asr-card" id="tcDoubaoCard">
+          <div class="asr-card-header">
+            <span class="model-tag asr">豆包 ASR</span>
+            <span class="status-text" id="tcDoubaoStatus"><span class="status-dot progress"></span>等待中</span>
+            <span class="time-text" id="tcDoubaoTime"></span>
+          </div>
+          <div class="asr-card-body">
+            <div class="asr-text" id="tcDoubaoText" contenteditable="true" data-placeholder="转写结果将显示在此处..."></div>
+          </div>
+          <div class="asr-card-footer">
+            <button class="btn btn-ghost btn-sm copy-btn" data-target="tcDoubaoText">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              复制
+            </button>
+          </div>
+        </div>
+        <div class="glass asr-card" id="tcQwenCard">
+          <div class="asr-card-header">
+            <span class="model-tag asr">千问 ASR</span>
+            <span class="status-text" id="tcQwenStatus"><span class="status-dot progress"></span>等待中</span>
+            <span class="time-text" id="tcQwenTime"></span>
+          </div>
+          <div class="asr-card-body">
+            <div class="asr-text" id="tcQwenText" contenteditable="true" data-placeholder="转写结果将显示在此处..."></div>
+          </div>
+          <div class="asr-card-footer">
+            <button class="btn btn-ghost btn-sm copy-btn" data-target="tcQwenText">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              复制
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="section-title" style="margin-top:24px;justify-content:space-between;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          AI 交叉修正结果
+        </div>
+        <button class="btn btn-ghost btn-sm" id="openModelSelectorBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><circle cx="18" cy="18" r="3"/><circle cx="6" cy="18" r="3"/></svg>
+          选择模型
+        </button>
+      </div>
+      <div class="correct-grid" id="tcCorrectGrid"></div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div class="player-bar" id="playerBar">
+  <button class="player-play" id="playerPlayBtn">
+    <svg id="playIcon" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+    <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+  </button>
+  <div class="player-progress">
+    <span class="player-time" id="playerCurrentTime">0:00</span>
+    <div class="player-slider" id="playerSlider">
+      <div class="player-slider-fill" id="playerSliderFill" style="width:0%"></div>
+      <div class="player-slider-thumb" id="playerSliderThumb" style="left:0%"></div>
+    </div>
+    <span class="player-time" id="playerTotalTime">0:00</span>
+  </div>
+  <div class="player-speed-wrapper">
+    <button class="player-speed" id="playerSpeedBtn">1.0x</button>
+    <div class="player-speed-menu" id="playerSpeedMenu">
+      <div class="player-speed-option" data-rate="0.5">0.5x</div>
+      <div class="player-speed-option" data-rate="0.75">0.75x</div>
+      <div class="player-speed-option active" data-rate="1.0">1.0x</div>
+      <div class="player-speed-option" data-rate="1.25">1.25x</div>
+      <div class="player-speed-option" data-rate="1.5">1.5x</div>
+      <div class="player-speed-option" data-rate="2.0">2.0x</div>
+    </div>
+  </div>
+  <div class="player-name" id="playerName">未选择音频</div>
+</div>
+
+<div class="modal-overlay" id="modelSelectorModal">
+  <div class="glass modal" style="max-width:560px">
+    <div class="modal-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>选择 AI 修正模型</span>
+      <span style="font-size:12px;color:var(--text-secondary);font-weight:400">拖拽调整顺序，点击开关启用/禁用</span>
+    </div>
+    <div id="modelSelectorList" style="max-height:400px;overflow-y:auto;padding-right:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modelSelectorCancel">取消</button>
+      <button class="btn btn-primary" id="modelSelectorSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-title">设置</div>
+  <div class="settings-group" style="display:none">
+    <div class="settings-label">豆包 API Key</div>
+    <div class="input-with-btn">
+      <input type="password" id="doubaoKeyInput" placeholder="输入豆包 API Key" value="">
+      <button id="toggleDoubaoKey" title="显示/隐藏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button id="clearDoubaoKey" title="清除">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="settings-group" style="display:none">
+    <div class="settings-label">百炼 API Key</div>
+    <div class="input-with-btn">
+      <input type="password" id="qwenKeyInput" placeholder="输入百炼 API Key" value="">
+      <button id="toggleQwenKey" title="显示/隐藏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button id="clearQwenKey" title="清除">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.06)">
+    <div class="settings-label" style="font-size:14px">豆包 ASR 参数</div>
+    <div class="settings-group" style="margin-top:12px;display:none">
+      <div class="settings-label">识别语言</div>
+      <input type="text" id="doubaoLangInput" placeholder="留空=自动检测，如 zh-CN、th-TH" spellcheck="false" style="width:100%;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:13px;font-family:var(--font);outline:none">
+    </div>
+    <div class="settings-group" style="margin-top:12px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">逆文本标准化 (ITN)</span>
+        <button class="toggle" id="doubaoItnToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:12px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">标点恢复</span>
+        <button class="toggle on" id="doubaoPuncToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:12px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用上下文</span>
+        <button class="toggle" id="doubaoCtxToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:8px;display:none" id="doubaoCtxDataGroup">
+      <div class="settings-label">上下文数据 (JSON)</div>
+      <textarea id="doubaoCtxDataInput" placeholder='{"context_type":"dialog_ctx","context_data":[{"text":"..."}]}' style="width:100%;min-height:80px;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:12px;font-family:var(--font-mono);resize:vertical;outline:none"></textarea>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.06)">
+    <div class="settings-label" style="font-size:14px">千问 ASR 参数</div>
+    <div class="settings-group" style="margin-top:12px;display:none">
+      <div class="settings-label">模型名称</div>
+      <input type="text" id="qwenModelInput" placeholder="如 qwen3-asr-flash" style="width:100%;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:13px;font-family:var(--font);outline:none">
+    </div>
+    <div class="settings-group" style="margin-top:12px;display:none">
+      <div class="settings-label">识别语言</div>
+      <input type="text" id="qwenLangInput" placeholder="留空=自动检测，如 zh-CN、th-TH" style="width:100%;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:13px;font-family:var(--font);outline:none">
+    </div>
+    <div class="settings-group" style="margin-top:12px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">逆文本标准化 (ITN)</span>
+        <button class="toggle" id="qwenItnToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:12px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用系统提示词</span>
+        <button class="toggle" id="qwenSysToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:8px;display:none" id="qwenSysMsgGroup">
+      <div class="settings-label">系统提示词</div>
+      <textarea id="qwenSysMsgInput" placeholder="你是一个专业的语音识别助手，请将音频内容准确转写为文字。" style="width:100%;min-height:80px;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:13px;font-family:var(--font);resize:vertical;outline:none"></textarea>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.06)">
+    <div class="settings-label" style="font-size:14px;font-weight:600">AI 修正模式 A：豆包单源修正</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin:4px 0 12px">仅将豆包 ASR 结果交给 AI 模型修正（4 个百炼模型 + 1 个方舟模型）</div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">系统提示词</div>
+      <textarea id="modeA_BaoLian_SystemMsgInput" style="width:100%;min-height:60px;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:12px;font-family:var(--font-mono);resize:vertical;outline:none"></textarea>
+    </div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">用户提示词模板</div>
+      <textarea id="modeA_BaoLian_UserMsgInput" style="width:100%;min-height:40px;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:12px;font-family:var(--font-mono);resize:vertical;outline:none"></textarea>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">占位符：{doubao_text}</div>
+    </div>
+    <div class="settings-group" style="margin-top:10px;display:none">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用百炼模型</span>
+        <button class="toggle on" id="modeA_BaoLian_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:10px;display:none">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用方舟模型</span>
+        <button class="toggle on" id="modeA_FangZhou_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.06)">
+    <div class="settings-label" style="font-size:14px;font-weight:600">AI 修正模式 B：双 ASR 交叉修正</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin:4px 0 12px">将豆包 ASR + 千问 ASR 结果交叉对比后交给 AI 模型修正（4 个百炼模型 + 1 个方舟模型）</div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">系统提示词</div>
+      <textarea id="modeB_BaoLian_SystemMsgInput" style="width:100%;min-height:60px;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:12px;font-family:var(--font-mono);resize:vertical;outline:none"></textarea>
+    </div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">用户提示词模板</div>
+      <textarea id="modeB_BaoLian_UserMsgInput" style="width:100%;min-height:40px;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:12px;font-family:var(--font-mono);resize:vertical;outline:none"></textarea>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">占位符：{qwen_text}、{doubao_text}</div>
+    </div>
+    <div class="settings-group" style="margin-top:10px;display:none">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用百炼模型</span>
+        <button class="toggle on" id="modeB_BaoLian_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:10px;display:none">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用方舟模型</span>
+        <button class="toggle on" id="modeB_FangZhou_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.06)">
+    <div class="settings-label" style="font-size:14px;font-weight:600">阿里百炼平台（4 个模型）</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin:4px 0 12px">Qwen 3.6 Plus · DeepSeek V4 · GLM 5.1 · Kimi K2.6</div>
+    <div class="settings-group" style="margin-top:8px;display:none">
+      <div class="settings-label">API 基础地址</div>
+      <input type="text" id="blApiUrlInput" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" style="width:100%;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:12px;font-family:var(--font-mono);outline:none">
+    </div>
+    <div class="settings-group" style="margin-top:10px;display:none">
+      <div class="settings-label">API Key</div>
+      <input type="password" id="blApiKeyInput" placeholder="输入阿里百炼 API Key" style="width:100%;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:13px;font-family:var(--font);outline:none">
+    </div>
+    <div class="settings-group" style="margin-top:14px;padding-top:10px;border-top:1px dashed rgba(0,0,0,0.08)">
+      <div class="settings-label" style="font-size:12px">默认参数（所有模型共用）</div>
+    </div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">温度 (temperature)</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="blTempSlider" min="0" max="2" step="0.05" value="0.1" style="flex:1">
+        <span id="blTempValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.1</span>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">Top-P</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="blTopPSlider" min="0" max="1" step="0.05" value="0.25" style="flex:1">
+        <span id="blTopPValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.25</span>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:10px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">流式输出</span>
+        <button class="toggle on" id="blStreamToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:10px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">深度思考</span>
+        <button class="toggle" id="blThinkingToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.06)">
+    <div class="settings-label" style="font-size:14px;font-weight:600">火山方舟平台（1 个模型）</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin:4px 0 12px">Doubao Seed 2.0 Pro</div>
+    <div class="settings-group" style="margin-top:8px;display:none">
+      <div class="settings-label">API Key</div>
+      <input type="password" id="fzApiKeyInput" placeholder="输入火山方舟 API Key" style="width:100%;padding:8px 12px;border-radius:var(--radius-input);border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.6);font-size:13px;font-family:var(--font);outline:none">
+    </div>
+    <div class="settings-group" style="margin-top:10px">
+      <div class="settings-label">温度 (temperature)</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="fzTempSlider" min="0" max="2" step="0.05" value="0.1" style="flex:1">
+        <span id="fzTempValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.1</span>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:8px">
+      <div class="settings-label">Top-P</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="fzTopPSlider" min="0" max="1" step="0.05" value="0.25" style="flex:1">
+        <span id="fzTopPValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.25</span>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:10px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">流式输出</span>
+        <button class="toggle on" id="fzStreamToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:10px">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">深度思考</span>
+        <button class="toggle" id="fzThinkingToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px">
+    <button class="btn btn-primary" id="saveSettingsBtn" style="width:100%;justify-content:center">保存设置</button>
+  </div>
+</div>
+
+<audio id="audioElement" preload="auto"></audio>
+
+<script>
+var DB={db:null,
+  init:function(){
+    return new Promise(function(resolve,reject){
+      var req=indexedDB.open('ASREvalDB',2);
+      req.onupgradeneeded=function(e){
+        var db=e.target.result;
+        if(!db.objectStoreNames.contains('audios'))db.createObjectStore('audios',{keyPath:'id'});
+        if(!db.objectStoreNames.contains('results'))db.createObjectStore('results',{keyPath:'id'});
+        if(!db.objectStoreNames.contains('scores'))db.createObjectStore('scores',{keyPath:'id'});
+      };
+      req.onsuccess=function(e){DB.db=e.target.result;resolve()};
+      req.onerror=function(e){reject(e)};
+    });
+  },
+  _tx:function(store,mode){return DB.db.transaction(store,mode).objectStore(store)},
+  saveAudio:function(id,data){return new Promise(function(r,j){var req=DB._tx('audios','readwrite').put(Object.assign({id:id},data));req.onsuccess=function(){r()};req.onerror=function(e){j(e)}})},
+  getAudio:function(id){return new Promise(function(r,j){var req=DB._tx('audios','readonly').get(id);req.onsuccess=function(){r(req.result)};req.onerror=function(e){j(e)}})},
+  getAllAudios:function(){return new Promise(function(r,j){var req=DB._tx('audios','readonly').getAll();req.onsuccess=function(){r(req.result)};req.onerror=function(e){j(e)}})},
+  deleteAudio:function(id){return new Promise(function(r,j){var req=DB._tx('audios','readwrite').delete(id);req.onsuccess=function(){r()};req.onerror=function(e){j(e)}})},
+  saveResult:function(id,data){return new Promise(function(r,j){var req=DB._tx('results','readwrite').put(Object.assign({id:id},data));req.onsuccess=function(){r()};req.onerror=function(e){j(e)}})},
+  getResult:function(id){return new Promise(function(r,j){var req=DB._tx('results','readonly').get(id);req.onsuccess=function(){r(req.result)};req.onerror=function(e){j(e)}})},
+  getAllResults:function(){return new Promise(function(r,j){var req=DB._tx('results','readonly').getAll();req.onsuccess=function(){r(req.result)};req.onerror=function(e){j(e)}})},
+  saveScore:function(id,data){return new Promise(function(r,j){var req=DB._tx('scores','readwrite').put(Object.assign({id:id},data));req.onsuccess=function(){r()};req.onerror=function(e){j(e)}})},
+  getScore:function(id){return new Promise(function(r,j){var req=DB._tx('scores','readonly').get(id);req.onsuccess=function(){r(req.result)};req.onerror=function(e){j(e)}})},
+  getAllScores:function(){return new Promise(function(r,j){var req=DB._tx('scores','readonly').getAll();req.onsuccess=function(){r(req.result)};req.onerror=function(e){j(e)}})}
+};
+
+var Settings={
+  doubaoKey:'d589176a-ec3c-4957-ac8e-c82b28b2d637',
+  qwenKey:'sk-039258fea37043f091c2ffee079a6080',
+  doubaoLanguage:'th-TH',
+  doubaoEnableItn:true,
+  doubaoEnablePunc:true,
+  doubaoEnableContext:true,
+  doubaoContextData:'{"context_type": "dialog_ctx", "context_data": [{"text": "你是高精度泰语ASR引擎。请将输入音频逐字转写为规范泰文文本。"}]}',
+  qwenModel:'qwen3-asr-flash',
+  qwenLanguage:'',
+  qwenEnableItn:false,
+  qwenEnableSystemMsg:true,
+  qwenSystemMsg:'你是高精度泰语ASR引擎。请将输入音频逐字转写为规范泰文文本。',
+  bailianApiUrl:'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  bailianApiKey:'sk-039258fea37043f091c2ffee079a6080',
+  bailianDefaultTemperature:0.1,
+  bailianDefaultTopP:0.25,
+  bailianDefaultStream:true,
+  bailianDefaultEnableThinking:false,
+  bailianDefaultSystemMsg:'# 角色设定\n你是一位资深的泰文语言学专家、专业语音转写校对员，精通泰文正字法。你拥有丰富的泰文各专业领域（特别是法律、医学、金融、工程等）知识，深刻理解这些领域在泰文中的特定术语规范、语法结构和格式书写要求。\n\n# 任务目标\n我将提供给你两段由同一段泰文语音转写（ASR）出来的文本。这两段文本可能存在转写错误。你需要通过交叉对比这两段文本，识别出错误，并输出唯一份准确、规范的泰文修复文本。\n\n# 核心规则（必须严格遵守）\n1. 【绝对红线】只能修复，绝不润色：你的角色仅限"纠错"，绝不是"改写"。严禁自行添加词汇、删减词汇或调整语序来让句子"更通顺"。只修复转写错误、错别字、标点、空格、数字，必须保持与原语音完全一致的原意和语句长度。\n\n2. 泰文书写规则：确保泰文拼写绝对正确，包括声调符号、元音位置、辅音类别的正确使用。严格遵循泰文排版空格规则（泰文单词之间不加空格，仅在标点、数字，以及主谓分界、状动分界、长定名分界、分句连词前置、从句引导词前置等意群边界处按规则空格；严禁在单词内部、固定搭配及紧密修饰结构中插空格）。\n\n3. 标点符号使用标准泰文标点体系，绝对禁止出现中文标点。',
+  bailianDefaultUserMsg:'# 输入格式\n[文本版本1]：{qwen_text}\n[文本版本2]：{doubao_text}\n\n# 输出格式\n仅输出最终修复好的泰文文本。不要输出任何解释、对比过程、分析笔记或开场白。',
+  modeA_BaoLian_SystemMsg:'# 角色设定\n你是一位资深的泰文语言学专家、专业语音转写校对员，精通泰文正字法。你拥有丰富的泰文各专业领域（特别是法律、医学、金融、工程等）知识，深刻理解这些领域在泰文中的特定术语规范、语法结构和格式书写要求。\n\n# 任务目标\n我将提供给你一段由泰文语音转写（ASR）出来的文本。该文本可能存在转写错误。你需要识别出错误，并输出准确、规范的泰文修复文本。\n\n# 核心规则（必须严格遵守）\n1. **【绝对红线】只能修复，绝不润色：** 你的角色仅限"纠错"，绝不是"改写"。严禁自行添加词汇、删减词汇或调整语序来让句子"更通顺"。只修复转写错误、错别字、标点、空格、数字，必须保持与原语音完全一致的原意和语句长度。\n\n2. **泰文书写规则：** 确保泰文拼写绝对正确，包括声调符号、元音位置、辅音类别的正确使用。严格遵循泰文排版空格规则（泰文单词之间不加空格，仅在标点、数字，以及主谓分界、状动分界、长定名分界、分句连词前置、从句引导词前置等意群边界处按规则空格；严禁在单词内部、固定搭配及紧密修饰结构中插空格）。\n\n3. **专业领域规范适配：** 根据文本所属领域（法律、医学、科技等），应用专属的词汇与排版标准：\n   - **术语校准：** 必须将通用或口语化表述替换为该领域的泰文标准学术/法定术语。\n   - **原词保留原则：** 医学（如拉丁文解剖名、国际非专利药名）、科技（如协议名、代码指令）等领域，若业界惯例直接使用外文，必须保留外文原文，不得强行音译或意译。\n   - **领域专属缩写：** 必须使用该领域公认的泰文或外文缩写形式（如法律文书的 ป.พ.พ.、医学单位的 ซม. 替代 เซนติเมตร）。\n\n4. **数字书写与搭配规则：**\n   - **防篡改要求（法律/契约语境）：** 阿拉伯数字后必须加括号内的泰文拼读（例如：10 (สิบ)）；条款序号格式为"阿拉伯数字 + 空格 + 泰文术语"（如 มาตรา 5, ข้อ 1）。\n   - **泰文数字专属语境（政府公文）：** 泰文数字（๑, ๒, ๓...）仅限用于泰国政府公文的页码、列表序号及公历日期（日/月/年）中，商务或一般正式场合不使用泰文数字。\n   - **量词搭配规则（通用核心）：** 阿拉伯数字后接泰文量词或名词时，数字与量词之间必须加空格（例如：3 คน, 5 แผ่น, 10 บาท）；**严禁**泰文数字与量词搭配（错误示范：๓ คน）。\n   - **国际符号语境（医学/科学/工程）：** 涉及国际标准单位缩写时，直接使用阿拉伯数字加国际符号，不加泰文量词（例如：120/80 mmHg, 10 mg, 100 cm）。\n   - **年份书写：** 统一使用阿拉伯数字，并搭配纪年缩写加空格（例如：พ.ศ. 2567, ค.ศ. 2024），不使用泰文数字。\n\n5. **外文混排规则：**\n   - **强制边界隔离：** 泰文与外文（无论单词或多词短语）的交界处，必须保留一个半角空格，禁止粘连（正确：การรักษาด้วย Artificial Intelligence | 错误：การรักษาด้วยArtificial Intelligence）。\n   - **保留外文原生形态：** 维持外文原有的拼写、大小写规范、缩写形式及内部标点（如 DNA, Ph.D., U.S.A.），不得擅自音译或泰文化。\n   - **外文与泰文标点衔接：** 外文内部标点保持原样；当外文处于泰文句子中并需衔接泰文标点时，外文与标点符号之间不加空格（正确：ใช้ระบบ AI. | 错误：ใช้ระบบ AI .）。\n\n6. **标点符号处理规则：**\n   - **严禁非泰文标点：** 必须使用标准泰文标点体系，绝对禁止出现中文标点（如 ， 。 ！ " "）。\n   - **拒绝碎片化断句：** 泰文句号（.）仅用于完整语义的终结。严禁模仿ASR的短促呼吸而在短语内部或主谓之间乱加句号造成句子碎片化。\n   - **逗号与空格的界限：** 短暂的意群停顿应优先使用"意群空格"（见规则2），而非逗号。逗号（,）仅用于明显的并列分句或较长的插入语停顿，避免逗号泛滥。\n   - **标点前置无空格原则：** 任何标点符号（句号、逗号、括号右半等）与其前方的文字之间，**严禁添加空格**（正确：ด้านอาญา. | 错误：ด้านอาญา .）。标点后方除句末外，按正常泰文排版规则处理。',
+  modeA_BaoLian_UserMsg:'# 输入格式\n[文本版本1]：{doubao_text}\n\n# 输出格式\n仅输出最终修复好的泰文文本。不要输出任何解释、对比过程、分析笔记或开场白。',
+  modeA_BaoLian_Enable:true,
+  modeA_FangZhou_SystemMsg:'# 角色设定\n你是一位资深的泰文语言学专家、专业语音转写校对员，精通泰文正字法。你拥有丰富的泰文各专业领域（特别是法律、医学、金融、工程等）知识，深刻理解这些领域在泰文中的特定术语规范、语法结构和格式书写要求。\n\n# 任务目标\n我将提供给你一段由泰文语音转写（ASR）出来的文本。该文本可能存在转写错误。你需要识别出错误，并输出准确、规范的泰文修复文本。\n\n# 核心规则（必须严格遵守）\n1. **【绝对红线】只能修复，绝不润色：** 你的角色仅限"纠错"，绝不是"改写"。严禁自行添加词汇、删减词汇或调整语序来让句子"更通顺"。只修复转写错误、错别字、标点、空格、数字，必须保持与原语音完全一致的原意和语句长度。\n\n2. **泰文书写规则：** 确保泰文拼写绝对正确，包括声调符号、元音位置、辅音类别的正确使用。严格遵循泰文排版空格规则（泰文单词之间不加空格，仅在标点、数字，以及主谓分界、状动分界、长定名分界、分句连词前置、从句引导词前置等意群边界处按规则空格；严禁在单词内部、固定搭配及紧密修饰结构中插空格）。\n\n3. **专业领域规范适配：** 根据文本所属领域（法律、医学、科技等），应用专属的词汇与排版标准：\n   - **术语校准：** 必须将通用或口语化表述替换为该领域的泰文标准学术/法定术语。\n   - **原词保留原则：** 医学（如拉丁文解剖名、国际非专利药名）、科技（如协议名、代码指令）等领域，若业界惯例直接使用外文，必须保留外文原文，不得强行音译或意译。\n   - **领域专属缩写：** 必须使用该领域公认的泰文或外文缩写形式（如法律文书的 ป.พ.พ.、医学单位的 ซม. 替代 เซนติเมตร）。\n\n4. **数字书写与搭配规则：**\n   - **防篡改要求（法律/契约语境）：** 阿拉伯数字后必须加括号内的泰文拼读（例如：10 (สิบ)）；条款序号格式为"阿拉伯数字 + 空格 + 泰文术语"（如 มาตรา 5, ข้อ 1）。\n   - **泰文数字专属语境（政府公文）：** 泰文数字（๑, ๒, ๓...）仅限用于泰国政府公文的页码、列表序号及公历日期（日/月/年）中，商务或一般正式场合不使用泰文数字。\n   - **量词搭配规则（通用核心）：** 阿拉伯数字后接泰文量词或名词时，数字与量词之间必须加空格（例如：3 คน, 5 แผ่น, 10 บาท）；**严禁**泰文数字与量词搭配（错误示范：๓ คน）。\n   - **国际符号语境（医学/科学/工程）：** 涉及国际标准单位缩写时，直接使用阿拉伯数字加国际符号，不加泰文量词（例如：120/80 mmHg, 10 mg, 100 cm）。\n   - **年份书写：** 统一使用阿拉伯数字，并搭配纪年缩写加空格（例如：พ.ศ. 2567, ค.ศ. 2024），不使用泰文数字。\n\n5. **外文混排规则：**\n   - **强制边界隔离：** 泰文与外文（无论单词或多词短语）的交界处，必须保留一个半角空格，禁止粘连（正确：การรักษาด้วย Artificial Intelligence | 错误：การรักษาด้วยArtificial Intelligence）。\n   - **保留外文原生形态：** 维持外文原有的拼写、大小写规范、缩写形式及内部标点（如 DNA, Ph.D., U.S.A.），不得擅自音译或泰文化。\n   - **外文与泰文标点衔接：** 外文内部标点保持原样；当外文处于泰文句子中并需衔接泰文标点时，外文与标点符号之间不加空格（正确：ใช้ระบบ AI. | 错误：ใช้ระบบ AI .）。\n\n6. **标点符号处理规则：**\n   - **严禁非泰文标点：** 必须使用标准泰文标点体系，绝对禁止出现中文标点（如 ， 。 ！ " "）。\n   - **拒绝碎片化断句：** 泰文句号（.）仅用于完整语义的终结。严禁模仿ASR的短促呼吸而在短语内部或主谓之间乱加句号造成句子碎片化。\n   - **逗号与空格的界限：** 短暂的意群停顿应优先使用"意群空格"（见规则2），而非逗号。逗号（,）仅用于明显的并列分句或较长的插入语停顿，避免逗号泛滥。\n   - **标点前置无空格原则：** 任何标点符号（句号、逗号、括号右半等）与其前方的文字之间，**严禁添加空格**（正确：ด้านอาญา. | 错误：ด้านอาญา .）。标点后方除句末外，按正常泰文排版规则处理。',
+  modeA_FangZhou_UserMsg:'# 输入格式\n[文本版本1]：{doubao_text}\n\n# 输出格式\n仅输出最终修复好的泰文文本。不要输出任何解释、对比过程、分析笔记或开场白。',
+  modeA_FangZhou_Enable:true,
+  modeB_BaoLian_SystemMsg:'# 角色设定\n你是一位资深的泰文语言学专家、专业语音转写校对员，精通泰文正字法。你拥有丰富的泰文各专业领域（特别是法律、医学、金融、工程等）知识，深刻理解这些领域在泰文中的特定术语规范、语法结构和格式书写要求。\n\n# 任务目标\n我将提供给你两段由同一段泰文语音转写（ASR）出来的文本。这两段文本可能存在转写错误。你需要通过交叉对比这两段文本，识别出错误，并输出唯一一份准确、规范的泰文修复文本。\n\n# 核心规则（必须严格遵守）\n1. **【绝对红线】只能修复，绝不润色：** 你的角色仅限"纠错"，绝不是"改写"。严禁自行添加词汇、删减词汇或调整语序来让句子"更通顺"。只修复转写错误、错别字、标点、空格、数字，必须保持与原语音完全一致的原意和语句长度。\n\n2. **泰文书写规则：** 确保泰文拼写绝对正确，包括声调符号、元音位置、辅音类别的正确使用。严格遵循泰文排版空格规则（泰文单词之间不加空格，仅在标点、数字，以及主谓分界、状动分界、长定名分界、分句连词前置、从句引导词前置等意群边界处按规则空格；严禁在单词内部、固定搭配及紧密修饰结构中插空格）。\n\n3. **专业领域规范适配：** 根据文本所属领域（法律、医学、科技等），应用专属的词汇与排版标准：\n   - **术语校准：** 必须将通用或口语化表述替换为该领域的泰文标准学术/法定术语。\n   - **原词保留原则：** 医学（如拉丁文解剖名、国际非专利药名）、科技（如协议名、代码指令）等领域，若业界惯例直接使用外文，必须保留外文原文，不得强行音译或意译。\n   - **领域专属缩写：** 必须使用该领域公认的泰文或外文缩写形式（如法律文书的 ป.พ.พ.、医学单位的 ซม. 替代 เซนติเมตร）。\n\n4. **数字书写与搭配规则：**\n   - **防篡改要求（法律/契约语境）：** 阿拉伯数字后必须加括号内的泰文拼读（例如：10 (สิบ)）；条款序号格式为"阿拉伯数字 + 空格 + 泰文术语"（如 มาตรา 5, ข้อ 1）。\n   - **泰文数字专属语境（政府公文）：** 泰文数字（๑, ๒, ๓...）仅限用于泰国政府公文的页码、列表序号及公历日期（日/月/年）中，商务或一般正式场合不使用泰文数字。\n   - **量词搭配规则（通用核心）：** 阿拉伯数字后接泰文量词或名词时，数字与量词之间必须加空格（例如：3 คน, 5 แผ่น, 10 บาท）；**严禁**泰文数字与量词搭配（错误示范：๓ คน）。\n   - **国际符号语境（医学/科学/工程）：** 涉及国际标准单位缩写时，直接使用阿拉伯数字加国际符号，不加泰文量词（例如：120/80 mmHg, 10 mg, 100 cm）。\n   - **年份书写：** 统一使用阿拉伯数字，并搭配纪年缩写加空格（例如：พ.ศ. 2567, ค.ศ. 2024），不使用泰文数字。\n\n5. **外文混排规则：**\n   - **强制边界隔离：** 泰文与外文（无论单词或多词短语）的交界处，必须保留一个半角空格，禁止粘连（正确：การรักษาด้วย Artificial Intelligence | 错误：การรักษาด้วยArtificial Intelligence）。\n   - **保留外文原生形态：** 维持外文原有的拼写、大小写规范、缩写形式及内部标点（如 DNA, Ph.D., U.S.A.），不得擅自音译或泰文化。\n   - **外文与泰文标点衔接：** 外文内部标点保持原样；当外文处于泰文句子中并需衔接泰文标点时，外文与标点符号之间不加空格（正确：ใช้ระบบ AI. | 错误：ใช้ระบบ AI .）。\n\n6. **标点符号处理规则：**\n   - **严禁非泰文标点：** 必须使用标准泰文标点体系，绝对禁止出现中文标点（如 ， 。 ！ " "）。\n   - **拒绝碎片化断句：** 泰文句号（.）仅用于完整语义的终结。严禁模仿ASR的短促呼吸而在短语内部或主谓之间乱加句号造成句子碎片化。\n   - **逗号与空格的界限：** 短暂的意群停顿应优先使用"意群空格"（见规则2），而非逗号。逗号（,）仅用于明显的并列分句或较长的插入语停顿，避免逗号泛滥。\n   - **标点前置无空格原则：** 任何标点符号（句号、逗号、括号右半等）与其前方的文字之间，**严禁添加空格**（正确：ด้านอาญา. | 错误：ด้านอาญา .）。标点后方除句末外，按正常泰文排版规则处理。',
+  modeB_BaoLian_UserMsg:'# 输入格式\n[文本版本1]：{qwen_text}\n[文本版本2]：{doubao_text}\n\n# 输出格式\n仅输出最终修复好的泰文文本。不要输出任何解释、对比过程、分析笔记或开场白。',
+  modeB_BaoLian_Enable:true,
+  modeB_FangZhou_SystemMsg:'# 角色设定\n你是一位资深的泰文语言学专家、专业语音转写校对员，精通泰文正字法。你拥有丰富的泰文各专业领域（特别是法律、医学、金融、工程等）知识，深刻理解这些领域在泰文中的特定术语规范、语法结构和格式书写要求。\n\n# 任务目标\n我将提供给你两段由同一段泰文语音转写（ASR）出来的文本。这两段文本可能存在转写错误。你需要通过交叉对比这两段文本，识别出错误，并输出唯一一份准确、规范的泰文修复文本。\n\n# 核心规则（必须严格遵守）\n1. **【绝对红线】只能修复，绝不润色：** 你的角色仅限"纠错"，绝不是"改写"。严禁自行添加词汇、删减词汇或调整语序来让句子"更通顺"。只修复转写错误、错别字、标点、空格、数字，必须保持与原语音完全一致的原意和语句长度。\n\n2. **泰文书写规则：** 确保泰文拼写绝对正确，包括声调符号、元音位置、辅音类别的正确使用。严格遵循泰文排版空格规则（泰文单词之间不加空格，仅在标点、数字，以及主谓分界、状动分界、长定名分界、分句连词前置、从句引导词前置等意群边界处按规则空格；严禁在单词内部、固定搭配及紧密修饰结构中插空格）。\n\n3. **专业领域规范适配：** 根据文本所属领域（法律、医学、科技等），应用专属的词汇与排版标准：\n   - **术语校准：** 必须将通用或口语化表述替换为该领域的泰文标准学术/法定术语。\n   - **原词保留原则：** 医学（如拉丁文解剖名、国际非专利药名）、科技（如协议名、代码指令）等领域，若业界惯例直接使用外文，必须保留外文原文，不得强行音译或意译。\n   - **领域专属缩写：** 必须使用该领域公认的泰文或外文缩写形式（如法律文书的 ป.พ.พ.、医学单位的 ซม. 替代 เซนติเมตร）。\n\n4. **数字书写与搭配规则：**\n   - **防篡改要求（法律/契约语境）：** 阿拉伯数字后必须加括号内的泰文拼读（例如：10 (สิบ)）；条款序号格式为"阿拉伯数字 + 空格 + 泰文术语"（如 มาตรา 5, ข้อ 1）。\n   - **泰文数字专属语境（政府公文）：** 泰文数字（๑, ๒, ๓...）仅限用于泰国政府公文的页码、列表序号及公历日期（日/月/年）中，商务或一般正式场合不使用泰文数字。\n   - **量词搭配规则（通用核心）：** 阿拉伯数字后接泰文量词或名词时，数字与量词之间必须加空格（例如：3 คน, 5 แผ่น, 10 บาท）；**严禁**泰文数字与量词搭配（错误示范：๓ คน）。\n   - **国际符号语境（医学/科学/工程）：** 涉及国际标准单位缩写时，直接使用阿拉伯数字加国际符号，不加泰文量词（例如：120/80 mmHg, 10 mg, 100 cm）。\n   - **年份书写：** 统一使用阿拉伯数字，并搭配纪年缩写加空格（例如：พ.ศ. 2567, ค.ศ. 2024），不使用泰文数字。\n\n5. **外文混排规则：**\n   - **强制边界隔离：** 泰文与外文（无论单词或多词短语）的交界处，必须保留一个半角空格，禁止粘连（正确：การรักษาด้วย Artificial Intelligence | 错误：การรักษาด้วยArtificial Intelligence）。\n   - **保留外文原生形态：** 维持外文原有的拼写、大小写规范、缩写形式及内部标点（如 DNA, Ph.D., U.S.A.），不得擅自音译或泰文化。\n   - **外文与泰文标点衔接：** 外文内部标点保持原样；当外文处于泰文句子中并需衔接泰文标点时，外文与标点符号之间不加空格（正确：ใช้ระบบ AI. | 错误：ใช้ระบบ AI .）。\n\n6. **标点符号处理规则：**\n   - **严禁非泰文标点：** 必须使用标准泰文标点体系，绝对禁止出现中文标点（如 ， 。 ！ " "）。\n   - **拒绝碎片化断句：** 泰文句号（.）仅用于完整语义的终结。严禁模仿ASR的短促呼吸而在短语内部或主谓之间乱加句号造成句子碎片化。\n   - **逗号与空格的界限：** 短暂的意群停顿应优先使用"意群空格"（见规则2），而非逗号。逗号（,）仅用于明显的并列分句或较长的插入语停顿，避免逗号泛滥。\n   - **标点前置无空格原则：** 任何标点符号（句号、逗号、括号右半等）与其前方的文字之间，**严禁添加空格**（正确：ด้านอาญา. | 错误：ด้านอาญา .）。标点后方除句末外，按正常泰文排版规则处理。',
+  modeB_FangZhou_UserMsg:'# 输入格式\n[文本版本1]：{qwen_text}\n[文本版本2]：{doubao_text}\n\n# 输出格式\n仅输出最终修复好的泰文文本。不要输出任何解释、对比过程、分析笔记或开场白。',
+  modeB_FangZhou_Enable:true,
+  fangzhouApiUrl:'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+  fangzhouApiKey:'ark-df7be188-1d2a-4c6d-ab1a-8d4e941df62a-bfe23',
+  fangzhouDefaultTemperature:0.1,
+  fangzhouDefaultTopP:0.25,
+  fangzhouDefaultStream:true,
+  fangzhouDefaultEnableThinking:false,
+  fangzhouDefaultSystemMsg:'# 角色设定\n你是一位资深的泰文语言学专家、专业语音转写校对员，精通泰文正字法。你拥有丰富的泰文各专业领域知识。\n\n# 任务目标\n我将提供给你两段由同一段泰文语音转写（ASR）出来的文本。这两段文本可能存在转写错误。你需要通过交叉对比这两段文本，识别出错误，并输出唯一份准确、规范的泰文修复文本。\n\n# 核心规则\n1. 只能修复，绝不润色：严禁自行添加、删减词汇或调整语序。只修复转写错误、错别字、标点、空格、数字。\n2. 确保泰文拼写绝对正确。\n3. 使用标准泰文标点体系。',
+  fangzhouDefaultUserMsg:'# 输入格式\n[文本版本1]：{qwen_text}\n[文本版本2]：{doubao_text}\n\n# 输出格式\n仅输出最终修复好的泰文文本。不要输出任何解释、对比过程或开场白。',
+  modelOrder:[],
+  modelEnabled:{},
+  load:function(){
+    try{
+      var s=localStorage.getItem('asr_eval_settings');
+      if(s){var d=JSON.parse(s);Object.assign(Settings,d)}
+    }catch(e){}
+    Settings.doubaoKey='d589176a-ec3c-4957-ac8e-c82b28b2d637';
+    Settings.qwenKey='sk-039258fea37043f091c2ffee079a6080';
+    Settings.doubaoLanguage='th-TH';
+    Settings.doubaoEnableItn=true;
+    Settings.doubaoEnablePunc=true;
+    Settings.doubaoEnableContext=true;
+    Settings.doubaoContextData='{"context_type": "dialog_ctx", "context_data": [{"text": "你是高精度泰语ASR引擎。请将输入音频逐字转写为规范泰文文本。"}]}';
+    Settings.modeA_BaoLian_Enable=true;
+    Settings.modeA_FangZhou_Enable=true;
+    Settings.modeB_BaoLian_Enable=true;
+    Settings.modeB_FangZhou_Enable=true;
+    Settings.bailianApiUrl='https://dashscope.aliyuncs.com/compatible-mode/v1';
+    Settings.bailianApiKey='sk-039258fea37043f091c2ffee079a6080';
+    Settings.fangzhouApiKey='ark-df7be188-1d2a-4c6d-ab1a-8d4e941df62a-bfe23';
+    Settings.qwenEnableSystemMsg=true;
+    Settings.qwenSystemMsg='你是高精度泰语ASR引擎。请将输入音频逐字转写为规范泰文文本。';
+  },
+  save:function(){
+    localStorage.setItem('asr_eval_settings',JSON.stringify({
+      doubaoKey:Settings.doubaoKey,
+      qwenKey:Settings.qwenKey,
+      doubaoLanguage:Settings.doubaoLanguage,
+      doubaoEnableItn:Settings.doubaoEnableItn,
+      doubaoEnablePunc:Settings.doubaoEnablePunc,
+      doubaoEnableContext:Settings.doubaoEnableContext,
+      doubaoContextData:Settings.doubaoContextData,
+      qwenModel:Settings.qwenModel,
+      qwenLanguage:Settings.qwenLanguage,
+      qwenEnableItn:Settings.qwenEnableItn,
+      qwenEnableSystemMsg:Settings.qwenEnableSystemMsg,
+      qwenSystemMsg:Settings.qwenSystemMsg,
+      bailianApiUrl:Settings.bailianApiUrl,
+      bailianApiKey:Settings.bailianApiKey,
+      bailianDefaultTemperature:Settings.bailianDefaultTemperature,
+      bailianDefaultTopP:Settings.bailianDefaultTopP,
+      bailianDefaultStream:Settings.bailianDefaultStream,
+      bailianDefaultEnableThinking:Settings.bailianDefaultEnableThinking,
+      bailianDefaultSystemMsg:Settings.bailianDefaultSystemMsg,
+      bailianDefaultUserMsg:Settings.bailianDefaultUserMsg,
+      modeA_BaoLian_SystemMsg:Settings.modeA_BaoLian_SystemMsg,
+      modeA_BaoLian_UserMsg:Settings.modeA_BaoLian_UserMsg,
+      modeA_BaoLian_Enable:Settings.modeA_BaoLian_Enable,
+      modeA_FangZhou_SystemMsg:Settings.modeA_FangZhou_SystemMsg,
+      modeA_FangZhou_UserMsg:Settings.modeA_FangZhou_UserMsg,
+      modeA_FangZhou_Enable:Settings.modeA_FangZhou_Enable,
+      modeB_BaoLian_SystemMsg:Settings.modeB_BaoLian_SystemMsg,
+      modeB_BaoLian_UserMsg:Settings.modeB_BaoLian_UserMsg,
+      modeB_BaoLian_Enable:Settings.modeB_BaoLian_Enable,
+      modeB_FangZhou_SystemMsg:Settings.modeB_FangZhou_SystemMsg,
+      modeB_FangZhou_UserMsg:Settings.modeB_FangZhou_UserMsg,
+      modeB_FangZhou_Enable:Settings.modeB_FangZhou_Enable,
+      fangzhouApiUrl:Settings.fangzhouApiUrl,
+      fangzhouApiKey:Settings.fangzhouApiKey,
+      fangzhouDefaultTemperature:Settings.fangzhouDefaultTemperature,
+      fangzhouDefaultTopP:Settings.fangzhouDefaultTopP,
+      fangzhouDefaultStream:Settings.fangzhouDefaultStream,
+      fangzhouDefaultEnableThinking:Settings.fangzhouDefaultEnableThinking,
+      fangzhouDefaultSystemMsg:Settings.fangzhouDefaultSystemMsg,
+      fangzhouDefaultUserMsg:Settings.fangzhouDefaultUserMsg,
+      modelOrder:Settings.modelOrder,
+      modelEnabled:Settings.modelEnabled
+    }));
+  }
+};
+
+var Mock={
+  doubaoASR:function(){
+    return new Promise(function(resolve){
+      setTimeout(function(){
+        var pollCount=0;
+        var pollInterval=setInterval(function(){
+          pollCount++;
+          if(pollCount>=3){
+            clearInterval(pollInterval);
+            resolve({text:'今天天气很好我们去一院看望了李老师他给我们讲了很多有趣的故事',status:'completed'});
+          }
+        },1000);
+      },2000);
+    });
+  },
+  qwenASR:function(onChunk){
+    return new Promise(function(resolve){
+      var text='今天天汽很好我们去医院看望了李老师他给我们讲了很多有去的故事';
+      var i=0;
+      var interval=setInterval(function(){
+        if(i<text.length){
+          onChunk(text[i]);
+          i++;
+        }else{
+          clearInterval(interval);
+          resolve(text);
+        }
+      },80);
+    });
+  },
+  aiCorrection:function(onChunk){
+    return new Promise(function(resolve){
+      var text='今天天气很好，我们去医院看望了李老师，他给我们讲了很多有趣的故事。';
+      var i=0;
+      var interval=setInterval(function(){
+        if(i<text.length){
+          onChunk(text[i]);
+          i++;
+        }else{
+          clearInterval(interval);
+          resolve(text);
+        }
+      },60);
+    });
+  }
+};
+
+var App={
+  selectedAudioId:null,
+  audioFiles:[],
+  currentGtAudioId:null,
+  currentTabIndex:0,
+  tabOrder:['library','transcribe-correct'],
+
+  disableSpellcheck:function(){
+    document.querySelectorAll('.settings-panel input,.settings-panel textarea').forEach(function(el){
+      el.setAttribute('spellcheck','false');
+    });
+  },
+
+  init:function(){
+    App.disableSpellcheck();
+    Settings.load();
+    App.applySettings();
+    DB.init().then(function(){
+      return App.loadAudioList();
+    });
+    App.bindEvents();
+    App.initSwipeGestures();
+  },
+
+  switchTab:function(tabName){
+    var tabIndex=App.tabOrder.indexOf(tabName);
+    if(tabIndex===-1)tabIndex=0;
+    App.currentTabIndex=tabIndex;
+    
+    document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active')});
+    document.querySelector('.nav-tab[data-tab="'+tabName+'"]').classList.add('active');
+    
+    var container=document.getElementById('tabContainer');
+    container.style.transform='translateX(-'+tabIndex*50+'%)';
+    
+    if(tabName==='transcribe-correct'){TranscribeCorrect.updateView()}
+  },
+
+  applySettings:function(){
+    document.getElementById('doubaoKeyInput').value=Settings.doubaoKey||'';
+    document.getElementById('qwenKeyInput').value=Settings.qwenKey||'';
+    document.getElementById('doubaoLangInput').value=Settings.doubaoLanguage||'';
+    var doubaoItn=document.getElementById('doubaoItnToggle');
+    if(Settings.doubaoEnableItn)doubaoItn.classList.add('on');else doubaoItn.classList.remove('on');
+    var doubaoPunc=document.getElementById('doubaoPuncToggle');
+    if(Settings.doubaoEnablePunc)doubaoPunc.classList.add('on');else doubaoPunc.classList.remove('on');
+    var doubaoCtx=document.getElementById('doubaoCtxToggle');
+    if(Settings.doubaoEnableContext)doubaoCtx.classList.add('on');else doubaoCtx.classList.remove('on');
+    document.getElementById('doubaoCtxDataGroup').style.display=Settings.doubaoEnableContext?'block':'none';
+    document.getElementById('doubaoCtxDataInput').value=Settings.doubaoContextData||'';
+    document.getElementById('qwenModelInput').value=Settings.qwenModel||'qwen3-asr-flash';
+    document.getElementById('qwenLangInput').value=Settings.qwenLanguage||'';
+    var qwenItn=document.getElementById('qwenItnToggle');
+    if(Settings.qwenEnableItn)qwenItn.classList.add('on');else qwenItn.classList.remove('on');
+    var qwenSys=document.getElementById('qwenSysToggle');
+    if(Settings.qwenEnableSystemMsg)qwenSys.classList.add('on');else qwenSys.classList.remove('on');
+    document.getElementById('qwenSysMsgGroup').style.display=Settings.qwenEnableSystemMsg?'block':'none';
+    document.getElementById('qwenSysMsgInput').value=Settings.qwenSystemMsg||'';
+    document.getElementById('blApiUrlInput').value=Settings.bailianApiUrl||'';
+    document.getElementById('blApiKeyInput').value=Settings.bailianApiKey||'';
+    document.getElementById('blTempSlider').value=Settings.bailianDefaultTemperature||0.1;
+    document.getElementById('blTempValue').textContent=Settings.bailianDefaultTemperature||0.1;
+    document.getElementById('blTopPSlider').value=Settings.bailianDefaultTopP||0.25;
+    document.getElementById('blTopPValue').textContent=Settings.bailianDefaultTopP||0.25;
+    var blStream=document.getElementById('blStreamToggle');
+    if(Settings.bailianDefaultStream)blStream.classList.add('on');else blStream.classList.remove('on');
+    var blThinking=document.getElementById('blThinkingToggle');
+    if(Settings.bailianDefaultEnableThinking)blThinking.classList.add('on');else blThinking.classList.remove('on');
+    var modeA_BL_Toggle=document.getElementById('modeA_BaoLian_EnableToggle');
+    if(Settings.modeA_BaoLian_Enable!==false)modeA_BL_Toggle.classList.add('on');else modeA_BL_Toggle.classList.remove('on');
+    document.getElementById('modeA_BaoLian_SystemMsgInput').value=Settings.modeA_BaoLian_SystemMsg||'';
+    document.getElementById('modeA_BaoLian_UserMsgInput').value=Settings.modeA_BaoLian_UserMsg||'';
+    var modeA_FZ_Toggle=document.getElementById('modeA_FangZhou_EnableToggle');
+    if(Settings.modeA_FangZhou_Enable!==false)modeA_FZ_Toggle.classList.add('on');else modeA_FZ_Toggle.classList.remove('on');
+    var modeB_BL_Toggle=document.getElementById('modeB_BaoLian_EnableToggle');
+    if(Settings.modeB_BaoLian_Enable!==false)modeB_BL_Toggle.classList.add('on');else modeB_BL_Toggle.classList.remove('on');
+    document.getElementById('modeB_BaoLian_SystemMsgInput').value=Settings.modeB_BaoLian_SystemMsg||'';
+    document.getElementById('modeB_BaoLian_UserMsgInput').value=Settings.modeB_BaoLian_UserMsg||'';
+    var modeB_FZ_Toggle=document.getElementById('modeB_FangZhou_EnableToggle');
+    if(Settings.modeB_FangZhou_Enable!==false)modeB_FZ_Toggle.classList.add('on');else modeB_FZ_Toggle.classList.remove('on');
+    document.getElementById('fzApiKeyInput').value=Settings.fangzhouApiKey||'';
+    document.getElementById('fzTempSlider').value=Settings.fangzhouDefaultTemperature||0.1;
+    document.getElementById('fzTempValue').textContent=Settings.fangzhouDefaultTemperature||0.1;
+    document.getElementById('fzTopPSlider').value=Settings.fangzhouDefaultTopP||0.25;
+    document.getElementById('fzTopPValue').textContent=Settings.fangzhouDefaultTopP||0.25;
+    var fzStream=document.getElementById('fzStreamToggle');
+    if(Settings.fangzhouDefaultStream)fzStream.classList.add('on');else fzStream.classList.remove('on');
+    var fzThinking=document.getElementById('fzThinkingToggle');
+    if(Settings.fangzhouDefaultEnableThinking)fzThinking.classList.add('on');else fzThinking.classList.remove('on');
+  },
+
+  loadAudioList:function(){
+    return DB.getAllAudios().then(function(list){
+      App.audioFiles=list||[];
+      App.renderAudioList();
+    });
+  },
+
+  renderAudioList:function(){
+    var container=document.getElementById('audioList');
+    var empty=document.getElementById('emptyAudio');
+    if(App.audioFiles.length===0){
+      container.innerHTML='';
+      container.appendChild(empty);
+      empty.style.display='block';
+      return;
+    }
+    empty.style.display='none';
+    var html='';
+    App.audioFiles.forEach(function(a){
+      var sel=a.id===App.selectedAudioId?'selected':'';
+      var urlBadge=a.url?'<span style="background:rgba(168,216,234,0.2);padding:1px 6px;border-radius:4px;font-size:11px">URL</span>':'';
+      html+='<div class="glass audio-item '+sel+'" data-id="'+a.id+'">'+
+        '<div class="audio-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>'+
+        '<div class="audio-item-info">'+
+          '<div class="audio-item-name">'+App.escapeHtml(a.name)+'</div>'+
+          '<div class="audio-item-meta">'+
+            '<span>'+(a.duration?App.formatDuration(a.duration):'--:--')+'</span>'+
+            '<span>'+(a.format||'--')+'</span>'+
+            '<span>'+(a.size?App.formatSize(a.size):'--')+'</span>'+
+            urlBadge+
+          '</div>'+
+        '</div>'+
+        '<div class="audio-item-actions">'+
+          '<button class="btn btn-ghost btn-sm del-btn" data-id="'+a.id+'" style="color:var(--ai-dark)">删除</button>'+
+        '</div>'+
+      '</div>';
+    });
+    container.innerHTML=html;
+    container.appendChild(empty);
+  },
+
+  escapeHtml:function(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML},
+
+  formatDuration:function(sec){
+    if(!sec||sec===0)return'0:00';
+    var m=Math.floor(sec/60);var s=Math.floor(sec%60);
+    return m+':'+(s<10?'0':'')+s;
+  },
+
+  formatSize:function(bytes){
+    if(bytes<1024)return bytes+' B';
+    if(bytes<1048576)return(bytes/1024).toFixed(1)+' KB';
+    return(bytes/1048576).toFixed(1)+' MB';
+  },
+
+  addAudioUrl:function(url){
+    var id='audio_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);
+    var safe=url.split('#')[0];
+    var name=safe.split('/').pop().split('?')[0]||'远程音频';
+    var audioData={id:id,name:name,format:'URL',size:0,duration:0,url:url};
+    var tempAudio=new Audio();
+    tempAudio.src=url;
+    tempAudio.addEventListener('loadedmetadata',function(){
+      audioData.duration=tempAudio.duration||0;
+      DB.saveAudio(id,audioData).then(function(){
+        App.audioFiles.push(audioData);
+        App.renderAudioList();
+      });
+    });
+    tempAudio.addEventListener('error',function(){
+      DB.saveAudio(id,audioData).then(function(){
+        App.audioFiles.push(audioData);
+        App.renderAudioList();
+      });
+    });
+  },
+
+  selectAudio:function(id){
+    App.selectedAudioId=id;
+    App.renderAudioList();
+    DB.getAudio(id).then(function(a){
+      if(!a)return;
+      var el=document.getElementById('audioElement');
+      if(a.url){
+        el.src=a.url;
+      }
+      document.getElementById('playerName').textContent=a.name||'未选择音频';
+      var activeTab=document.querySelector('.nav-tab.active');
+      if(activeTab){
+        var tabName=activeTab.dataset.tab;
+        if(tabName==='transcribe-correct'){TranscribeCorrect.updateView()}
+      }
+      el.load();
+    });
+  },
+
+  deleteAudio:function(id){
+    DB.deleteAudio(id).then(function(){
+      App.audioFiles=App.audioFiles.filter(function(a){return a.id!==id});
+      if(App.selectedAudioId===id){
+        App.selectedAudioId=null;
+        document.getElementById('audioElement').src='';
+        document.getElementById('playerName').textContent='未选择音频';
+        document.getElementById('playerCurrentTime').textContent='0:00';
+        document.getElementById('playerTotalTime').textContent='0:00';
+        document.getElementById('playerSliderFill').style.width='0%';
+        document.getElementById('playerSliderThumb').style.left='0%';
+      }
+      App.renderAudioList();
+    });
+  },
+
+  exportData:function(){
+    Promise.all([DB.getAllAudios(),DB.getAllResults(),DB.getAllScores()]).then(function(data){
+      var exportObj={audios:data[0],results:data[1],scores:data[2]};
+      var blob=new Blob([JSON.stringify(exportObj,null,2)],{type:'application/json'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;a.download='asr_eval_export_'+new Date().toISOString().slice(0,10)+'.json';
+      a.click();URL.revokeObjectURL(url);
+    });
+  },
+
+  bindEvents:function(){
+    document.querySelectorAll('.nav-tab').forEach(function(tab){
+      tab.addEventListener('click',function(){
+        App.switchTab(tab.dataset.tab);
+      });
+    });
+
+    document.getElementById('addUrlBtn').addEventListener('click',function(){
+      var url=document.getElementById('audioUrlInput').value.trim();
+      if(url){App.addAudioUrl(url);document.getElementById('audioUrlInput').value=''}
+    });
+
+    document.getElementById('audioList').addEventListener('click',function(e){
+      var delBtn=e.target.closest('.del-btn');
+      var item=e.target.closest('.audio-item');
+      if(delBtn){e.stopPropagation();App.deleteAudio(delBtn.dataset.id);return}
+      if(item){App.selectAudio(item.dataset.id)}
+    });
+
+    var audioEl=document.getElementById('audioElement');
+    var playBtn=document.getElementById('playerPlayBtn');
+    var playIcon=document.getElementById('playIcon');
+    var pauseIcon=document.getElementById('pauseIcon');
+    var speedBtn=document.getElementById('playerSpeedBtn');
+    var speedMenu=document.getElementById('playerSpeedMenu');
+
+    speedBtn.addEventListener('click',function(e){
+      e.stopPropagation();
+      speedMenu.classList.toggle('show');
+    });
+
+    speedMenu.addEventListener('click',function(e){
+      var option=e.target.closest('.player-speed-option');
+      if(option){
+        var rate=parseFloat(option.dataset.rate);
+        audioEl.playbackRate=rate;
+        speedBtn.textContent=rate+'x';
+        speedMenu.querySelectorAll('.player-speed-option').forEach(function(el){el.classList.remove('active')});
+        option.classList.add('active');
+        speedMenu.classList.remove('show');
+      }
+    });
+
+    document.addEventListener('click',function(e){
+      if(!speedMenu.contains(e.target)&&e.target!==speedBtn){
+        speedMenu.classList.remove('show');
+      }
+    });
+
+    playBtn.addEventListener('click',function(){
+      if(audioEl.paused){audioEl.play()}else{audioEl.pause()}
+    });
+    audioEl.addEventListener('play',function(){playIcon.style.display='none';pauseIcon.style.display='block'});
+    audioEl.addEventListener('pause',function(){playIcon.style.display='block';pauseIcon.style.display='none'});
+    audioEl.addEventListener('loadedmetadata',function(){
+      document.getElementById('playerTotalTime').textContent=App.formatDuration(audioEl.duration);
+    });
+    audioEl.addEventListener('timeupdate',function(){
+      if(!audioEl.duration)return;
+      var pct=(audioEl.currentTime/audioEl.duration)*100;
+      document.getElementById('playerCurrentTime').textContent=App.formatDuration(audioEl.currentTime);
+      document.getElementById('playerSliderFill').style.width=pct+'%';
+      document.getElementById('playerSliderThumb').style.left=pct+'%';
+    });
+    audioEl.addEventListener('ended',function(){
+      playIcon.style.display='block';pauseIcon.style.display='none';
+    });
+
+    var slider=document.getElementById('playerSlider');
+    var dragging=false;
+    function seekTo(e){
+      var rect=slider.getBoundingClientRect();
+      var pct=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+      if(audioEl.duration){audioEl.currentTime=pct*audioEl.duration}
+    }
+    slider.addEventListener('mousedown',function(e){dragging=true;seekTo(e)});
+    document.addEventListener('mousemove',function(e){if(dragging)seekTo(e)});
+    document.addEventListener('mouseup',function(){dragging=false});
+
+    var settingsPanel=document.getElementById('settingsPanel');
+    document.getElementById('settingsBtn').addEventListener('click',function(){
+      settingsPanel.classList.toggle('open');
+    });
+    document.addEventListener('click',function(e){
+      if(!settingsPanel.contains(e.target)&&e.target!==document.getElementById('settingsBtn')&&!document.getElementById('settingsBtn').contains(e.target)){
+        settingsPanel.classList.remove('open');
+      }
+    });
+
+    document.getElementById('doubaoItnToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('doubaoPuncToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('doubaoCtxToggle').addEventListener('click',function(){
+      this.classList.toggle('on');
+      document.getElementById('doubaoCtxDataGroup').style.display=this.classList.contains('on')?'block':'none';
+    });
+    document.getElementById('qwenItnToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('qwenSysToggle').addEventListener('click',function(){
+      this.classList.toggle('on');
+      document.getElementById('qwenSysMsgGroup').style.display=this.classList.contains('on')?'block':'none';
+    });
+
+    document.getElementById('blStreamToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('blThinkingToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('fzStreamToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('fzThinkingToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('modeA_BaoLian_EnableToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('modeA_FangZhou_EnableToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('modeB_BaoLian_EnableToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('modeB_FangZhou_EnableToggle').addEventListener('click',function(){this.classList.toggle('on')});
+    document.getElementById('blTempSlider').addEventListener('input',function(){document.getElementById('blTempValue').textContent=this.value});
+    document.getElementById('blTopPSlider').addEventListener('input',function(){document.getElementById('blTopPValue').textContent=this.value});
+    document.getElementById('fzTempSlider').addEventListener('input',function(){document.getElementById('fzTempValue').textContent=this.value});
+    document.getElementById('fzTopPSlider').addEventListener('input',function(){document.getElementById('fzTopPValue').textContent=this.value});
+
+    function toggleKeyVisibility(inputId){
+      var inp=document.getElementById(inputId);
+      inp.type=inp.type==='password'?'text':'password';
+    }
+    document.getElementById('toggleDoubaoKey').addEventListener('click',function(){toggleKeyVisibility('doubaoKeyInput')});
+    document.getElementById('toggleQwenKey').addEventListener('click',function(){toggleKeyVisibility('qwenKeyInput')});
+    document.getElementById('clearDoubaoKey').addEventListener('click',function(){document.getElementById('doubaoKeyInput').value=''});
+    document.getElementById('clearQwenKey').addEventListener('click',function(){document.getElementById('qwenKeyInput').value=''});
+
+    document.getElementById('saveSettingsBtn').addEventListener('click',function(){
+      Settings.doubaoKey=document.getElementById('doubaoKeyInput').value;
+      Settings.qwenKey=document.getElementById('qwenKeyInput').value;
+      Settings.doubaoLanguage=document.getElementById('doubaoLangInput').value.trim();
+      Settings.doubaoEnableItn=document.getElementById('doubaoItnToggle').classList.contains('on');
+      Settings.doubaoEnablePunc=document.getElementById('doubaoPuncToggle').classList.contains('on');
+      Settings.doubaoEnableContext=document.getElementById('doubaoCtxToggle').classList.contains('on');
+      Settings.doubaoContextData=document.getElementById('doubaoCtxDataInput').value.trim();
+      Settings.qwenModel=document.getElementById('qwenModelInput').value.trim()||'qwen3-asr-flash';
+      Settings.qwenLanguage=document.getElementById('qwenLangInput').value.trim();
+      Settings.qwenEnableItn=document.getElementById('qwenItnToggle').classList.contains('on');
+      Settings.qwenEnableSystemMsg=document.getElementById('qwenSysToggle').classList.contains('on');
+      Settings.qwenSystemMsg=document.getElementById('qwenSysMsgInput').value.trim();
+      Settings.bailianApiUrl=document.getElementById('blApiUrlInput').value.trim();
+      Settings.bailianApiKey=document.getElementById('blApiKeyInput').value;
+      Settings.bailianDefaultTemperature=parseFloat(document.getElementById('blTempSlider').value)||0.1;
+      Settings.bailianDefaultTopP=parseFloat(document.getElementById('blTopPSlider').value)||0.25;
+      Settings.bailianDefaultStream=document.getElementById('blStreamToggle').classList.contains('on');
+      Settings.bailianDefaultEnableThinking=document.getElementById('blThinkingToggle').classList.contains('on');
+      Settings.modeA_BaoLian_SystemMsg=document.getElementById('modeA_BaoLian_SystemMsgInput').value;
+      Settings.modeA_BaoLian_UserMsg=document.getElementById('modeA_BaoLian_UserMsgInput').value;
+      Settings.modeA_BaoLian_Enable=document.getElementById('modeA_BaoLian_EnableToggle').classList.contains('on');
+      Settings.modeA_FangZhou_SystemMsg=document.getElementById('modeA_FangZhou_SystemMsgInput')?document.getElementById('modeA_FangZhou_SystemMsgInput').value:'';
+      Settings.modeA_FangZhou_UserMsg=document.getElementById('modeA_FangZhou_UserMsgInput')?document.getElementById('modeA_FangZhou_UserMsgInput').value:'';
+      Settings.modeA_FangZhou_Enable=document.getElementById('modeA_FangZhou_EnableToggle').classList.contains('on');
+      Settings.modeB_BaoLian_SystemMsg=document.getElementById('modeB_BaoLian_SystemMsgInput').value;
+      Settings.modeB_BaoLian_UserMsg=document.getElementById('modeB_BaoLian_UserMsgInput').value;
+      Settings.modeB_BaoLian_Enable=document.getElementById('modeB_BaoLian_EnableToggle').classList.contains('on');
+      Settings.modeB_FangZhou_SystemMsg=document.getElementById('modeB_FangZhou_SystemMsgInput')?document.getElementById('modeB_FangZhou_SystemMsgInput').value:'';
+      Settings.modeB_FangZhou_UserMsg=document.getElementById('modeB_FangZhou_UserMsgInput')?document.getElementById('modeB_FangZhou_UserMsgInput').value:'';
+      Settings.modeB_FangZhou_Enable=document.getElementById('modeB_FangZhou_EnableToggle').classList.contains('on');
+      Settings.fangzhouApiKey=document.getElementById('fzApiKeyInput').value;
+      Settings.fangzhouDefaultTemperature=parseFloat(document.getElementById('fzTempSlider').value)||0.1;
+      Settings.fangzhouDefaultTopP=parseFloat(document.getElementById('fzTopPSlider').value)||0.25;
+      Settings.fangzhouDefaultStream=document.getElementById('fzStreamToggle').classList.contains('on');
+      Settings.fangzhouDefaultEnableThinking=document.getElementById('fzThinkingToggle').classList.contains('on');
+      Settings.save();
+      settingsPanel.classList.remove('open');
+    });
+
+    document.getElementById('startTcBtn').addEventListener('click',function(){TranscribeCorrect.start()});
+
+    document.getElementById('openModelSelectorBtn').addEventListener('click',function(){TranscribeCorrect.openModelSelector()});
+    document.getElementById('modelSelectorCancel').addEventListener('click',function(){document.getElementById('modelSelectorModal').classList.remove('show')});
+    document.getElementById('modelSelectorSave').addEventListener('click',function(){TranscribeCorrect.saveModelSelector()});
+    document.getElementById('modelSelectorModal').addEventListener('click',function(e){
+      if(e.target===e.currentTarget)e.currentTarget.classList.remove('show');
+    });
+
+    document.addEventListener('click',function(e){
+      var copyBtn=e.target.closest('.copy-btn');
+      if(copyBtn){
+        var targetId=copyBtn.dataset.target;
+        var el=document.getElementById(targetId);
+        if(el){
+          var text=el.textContent||el.innerText;
+          navigator.clipboard.writeText(text).then(function(){
+            var orig=copyBtn.innerHTML;
+            copyBtn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg> 已复制';
+            setTimeout(function(){copyBtn.innerHTML=orig},1500);
+          });
+        }
+      }
+    });
+  },
+
+  initSwipeGestures:function(){
+    var isMobile=('ontouchstart' in window)||(navigator.maxTouchPoints>0)||(window.innerWidth<=768);
+    
+    if(isMobile){
+      App.initMobileSwipe();
+    }else{
+      App.initDesktopKeyboard();
+    }
+  },
+
+  initMobileSwipe:function(){
+    var container=document.getElementById('tabContainer');
+    var startX=0,startY=0,distX=0,distY=0;
+    var swiping=false;
+    var startTime=0;
+
+    function handleStart(e){
+      var point=e.touches?e.touches[0]:e;
+      startX=point.clientX;
+      startY=point.clientY;
+      distX=0;
+      distY=0;
+      swiping=false;
+      startTime=Date.now();
+    }
+
+    function handleMove(e){
+      var point=e.touches?e.touches[0]:e;
+      distX=point.clientX-startX;
+      distY=point.clientY-startY;
+
+      if(!swiping&&Math.abs(distX)>Math.abs(distY)&&Math.abs(distX)>10){
+        swiping=true;
+        container.classList.add('swiping');
+      }
+
+      if(swiping){
+        var baseOffset=-(App.currentTabIndex*50);
+        var movePercent=(distX/window.innerWidth)*50;
+        var newOffset=baseOffset+movePercent;
+        
+        if(newOffset<-50)newOffset=-50;
+        if(newOffset>0)newOffset=0;
+        
+        container.style.transform='translateX('+newOffset+'%)';
+      }
+    }
+
+    function handleEnd(){
+      if(!swiping)return;
+      container.classList.remove('swiping');
+
+      var elapsed=Date.now()-startTime;
+      var velocity=Math.abs(distX)/elapsed;
+      var threshold=window.innerWidth*0.15;
+
+      var shouldSwitch=false;
+      var direction=0;
+
+      if(Math.abs(distX)>threshold||(velocity>0.3&&Math.abs(distX)>30)){
+        shouldSwitch=true;
+        direction=distX>0?-1:1;
+      }
+
+      if(shouldSwitch){
+        var newIndex=App.currentTabIndex+direction;
+        if(newIndex>=0&&newIndex<App.tabOrder.length){
+          App.switchTab(App.tabOrder[newIndex]);
+        }else{
+          App.switchTab(App.tabOrder[App.currentTabIndex]);
+        }
+      }else{
+        App.switchTab(App.tabOrder[App.currentTabIndex]);
+      }
+
+      swiping=false;
+    }
+
+    container.addEventListener('touchstart',handleStart,{passive:true});
+    container.addEventListener('touchmove',handleMove,{passive:false});
+    container.addEventListener('touchend',handleEnd);
+  },
+
+  initDesktopKeyboard:function(){
+    document.addEventListener('keydown',function(e){
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable){
+        return;
+      }
+
+      if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+        e.preventDefault();
+        var direction=e.key==='ArrowLeft'?-1:1;
+        var newIndex=App.currentTabIndex+direction;
+        if(newIndex>=0&&newIndex<App.tabOrder.length){
+          App.switchTab(App.tabOrder[newIndex]);
+        }
+      }
+    });
+
+    var container=document.getElementById('tabContainer');
+    var wheelTimeout=null;
+    var accumulatedDelta=0;
+    var wheelThreshold=100;
+
+    container.addEventListener('wheel',function(e){
+      if(wheelTimeout)return;
+      
+      var currentView=document.getElementById('tab-'+App.tabOrder[App.currentTabIndex]);
+      var isAtTop=currentView.scrollTop<=0;
+      var isAtBottom=currentView.scrollTop>=currentView.scrollHeight-currentView.clientHeight-1;
+
+      if((e.deltaY>0&&isAtBottom)||(e.deltaY<0&&isAtTop)){
+        accumulatedDelta+=Math.abs(e.deltaY);
+        
+        if(accumulatedDelta>wheelThreshold){
+          e.preventDefault();
+          accumulatedDelta=0;
+          
+          var direction=e.deltaY>0?1:-1;
+          var newIndex=App.currentTabIndex+direction;
+          if(newIndex>=0&&newIndex<App.tabOrder.length){
+            wheelTimeout=setTimeout(function(){
+              wheelTimeout=null;
+              accumulatedDelta=0;
+            },800);
+            App.switchTab(App.tabOrder[newIndex]);
+          }
+        }
+      }
+    },{passive:false});
+
+    var mouseDown=false;
+    var startX=0,distX=0;
+    var startTime=0;
+
+    container.addEventListener('mousedown',function(e){
+      if(e.button!==0)return;
+      if(e.target.closest('.audio-item')||e.target.closest('.btn')||e.target.closest('a')){
+        return;
+      }
+      mouseDown=true;
+      startX=e.clientX;
+      distX=0;
+      startTime=Date.now();
+      container.style.cursor='grabbing';
+    });
+
+    container.addEventListener('mousemove',function(e){
+      if(!mouseDown)return;
+      distX=e.clientX-startX;
+
+      if(Math.abs(distX)>10){
+        e.preventDefault();
+        container.classList.add('swiping');
+        var baseOffset=-(App.currentTabIndex*50);
+        var movePercent=(distX/window.innerWidth)*50;
+        var newOffset=baseOffset+movePercent;
+        
+        if(newOffset<-50)newOffset=-50;
+        if(newOffset>0)newOffset=0;
+        
+        container.style.transform='translateX('+newOffset+'%)';
+      }
+    });
+
+    container.addEventListener('mouseup',function(){
+      if(!mouseDown)return;
+      mouseDown=false;
+      container.style.cursor='';
+      container.classList.remove('swiping');
+
+      var elapsed=Date.now()-startTime;
+      var velocity=Math.abs(distX)/elapsed;
+      var threshold=window.innerWidth*0.12;
+
+      if(Math.abs(distX)>threshold||(velocity>0.3&&Math.abs(distX)>25)){
+        var direction=distX>0?-1:1;
+        var newIndex=App.currentTabIndex+direction;
+        if(newIndex>=0&&newIndex<App.tabOrder.length){
+          App.switchTab(App.tabOrder[newIndex]);
+        }else{
+          App.switchTab(App.tabOrder[App.currentTabIndex]);
+        }
+      }else{
+        App.switchTab(App.tabOrder[App.currentTabIndex]);
+      }
+    });
+
+    container.addEventListener('mouseleave',function(){
+      if(mouseDown){
+        mouseDown=false;
+        container.style.cursor='';
+        container.classList.remove('swiping');
+        App.switchTab(App.tabOrder[App.currentTabIndex]);
+      }
+    });
+  }
+};
+
+var API={
+  cleanDoubaoText:function(text){
+    return text.replace(/<unk>\/?/gi,'').replace(/\[unk\]\/?/gi,'').replace(/<\|[^>]*\|?>/g,'').replace(/<[^>]+>/g,'').replace(/\[(?:unk|noise|sil|music|laugh|spk|hes|breath|cough|lip|applause|cry)\]\/?/gi,'').replace(/\{(?:unk|noise|sil|music|laugh|spk|hes|breath|cough)\}\/?/gi,'').replace(/\*{2,}/g,'').replace(/\s{2,}/g,' ').trim();
+  },
+
+  guessDoubaoFormat:function(url){
+    var p=url.split('?')[0].toLowerCase();
+    if(p.endsWith('.wav'))return'wav';
+    if(p.endsWith('.ogg')||p.endsWith('.opus'))return'ogg';
+    if(p.endsWith('.flac'))return'raw';
+    if(p.endsWith('.webm'))return'ogg';
+    return'mp3';
+  },
+
+  doubaoASR:function(audioUrl,onStatus,onDone){
+    var taskId='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;var v=c==='x'?r:(r&0x3|0x8);return v.toString(16)});
+    var format=API.guessDoubaoFormat(audioUrl);
+    var submitBody={
+      user:{uid:'web_user'},
+      audio:{url:audioUrl,format:format},
+      request:{
+        model_name:'bigmodel',
+        enable_itn:Settings.doubaoEnableItn!==undefined?Settings.doubaoEnableItn:false,
+        enable_punc:Settings.doubaoEnablePunc!==undefined?Settings.doubaoEnablePunc:true
+      }
+    };
+    if(Settings.doubaoLanguage&&Settings.doubaoLanguage!==''){
+      submitBody.audio.language=Settings.doubaoLanguage;
+    }
+    if(Settings.doubaoEnableContext&&Settings.doubaoContextData&&Settings.doubaoContextData.trim()!==''){
+      try{
+        JSON.parse(Settings.doubaoContextData);
+        submitBody.request.corpus={context:Settings.doubaoContextData};
+      }catch(e){
+        console.error('[Doubao] 上下文数据JSON 格式无效:',e);
+      }
+    }
+    var startTime=Date.now();
+
+    fetch('/api/doubao/submit',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Api-Key':Settings.doubaoKey,'X-Api-Resource-Id':'volc.seedasr.auc','X-Api-Request-Id':taskId,'X-Api-Sequence':'-1'},
+      body:JSON.stringify(submitBody)
+    }).then(function(resp){
+      var statusCode=resp.headers.get('X-Api-Status-Code');
+      if(statusCode!=='20000000')throw new Error('提交失败: '+statusCode);
+      onStatus('提交成功，轮询中...');
+      var pollCount=0;
+      function poll(){
+        pollCount++;
+        onStatus('轮询中第 '+pollCount+' 次');
+        fetch('/api/doubao/query',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-Api-Key':Settings.doubaoKey,'X-Api-Resource-Id':'volc.seedasr.auc','X-Api-Request-Id':taskId},
+          body:JSON.stringify({})
+        }).then(function(qResp){
+          var qStatus=qResp.headers.get('X-Api-Status-Code');
+          if(qStatus==='20000000'){
+            return qResp.json().then(function(data){
+              var text=data.result?data.result.text:'';
+              var cleaned=API.cleanDoubaoText(text);
+              var elapsed=((Date.now()-startTime)/1000).toFixed(1);
+              onDone(null,cleaned,elapsed);
+            });
+          }else if(qStatus==='20000001'||qStatus==='20000002'){
+            if(pollCount<300){setTimeout(poll,1500)}
+            else{onDone(new Error('轮询超时'))}
+          }else{
+            onDone(new Error('查询失败: '+qStatus));
+          }
+        }).catch(function(e){
+          onDone(e);
+        });
+      }
+      setTimeout(poll,800);
+    }).catch(function(e){
+      onDone(e);
+    });
+  },
+
+  qwenASRFromUrl:function(audioUrl,onChunk,onDone){
+    var startTime=Date.now();
+    var proxyUrl='/api/proxy-url?url='+encodeURIComponent(audioUrl);
+    fetch(proxyUrl).then(function(r){
+      if(!r.ok)throw new Error('音频下载失败: HTTP '+r.status);
+      var contentType=r.headers.get('content-type')||'';
+      return r.blob().then(function(blob){return{blob:blob,contentType:contentType}});
+    }).then(function(d){
+      return new Promise(function(resolve,reject){
+        var fr=new FileReader();
+        fr.onload=function(){resolve(fr.result)};
+        fr.onerror=function(){reject(new Error('音频读取失败'))};
+        fr.readAsDataURL(d.blob);
+      });
+    }).then(function(base64DataUri){
+      var messages=[];
+      if(Settings.qwenEnableSystemMsg){
+        messages.push({
+          role:'system',
+          content:[{
+            type:'text',
+            text:Settings.qwenSystemMsg||'你是一个专业的语音识别助手，请将音频内容准确转写为文字。'
+          }]
+        });
+      }
+      messages.push({
+        role:'user',
+        content:[{type:'input_audio',input_audio:{data:base64DataUri}}]
+      });
+      var body={
+        model:Settings.qwenModel||'qwen3-asr-flash',
+        messages:messages,
+        stream:true,
+        asr_options:{}
+      };
+      if(Settings.qwenLanguage&&Settings.qwenLanguage!==''){
+        body.asr_options.language=Settings.qwenLanguage;
+      }
+      if(Settings.qwenEnableItn!==undefined){
+        body.asr_options.enable_itn=Settings.qwenEnableItn===true;
+      }else{
+        body.asr_options.enable_itn=false;
+      }
+      fetch('/api/bailian/compatible-mode/v1/chat/completions',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+Settings.qwenKey,'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      }).then(function(resp){
+        if(!resp.ok)throw new Error('HTTP '+resp.status);
+        var reader2=resp.body.getReader();
+        var decoder=new TextDecoder();
+        var buffer='';
+        var fullText='';
+        function process(){
+          reader2.read().then(function(result){
+            if(result.done){var elapsed=((Date.now()-startTime)/1000).toFixed(1);onDone(null,fullText,elapsed);return}
+            buffer+=decoder.decode(result.value,{stream:true});
+            var lines=buffer.split('\n');
+            buffer=lines.pop()||'';
+            for(var i=0;i<lines.length;i++){
+              var trimmed=lines[i].trim();
+              if(!trimmed||!trimmed.startsWith('data: '))continue;
+              var data=trimmed.slice(6);
+              if(data==='[DONE]')continue;
+              try{
+                var parsed=JSON.parse(data);
+                if(parsed.choices&&parsed.choices[0]&&parsed.choices[0].delta&&parsed.choices[0].delta.content){
+                  fullText+=parsed.choices[0].delta.content;
+                  onChunk(fullText);
+                }
+              }catch(e){}
+            }
+            process();
+          }).catch(function(e){onDone(e)});
+        }
+        process();
+      }).catch(function(e){onDone(e)});
+    }).catch(function(e){
+      onDone(e);
+    });
+  },
+
+  aiCorrect:function(model,qwenText,doubaoText,onChunk,onDone){
+    var scheme=(typeof model==='object'&&model.scheme)?model.scheme:'bailian';
+    var fullModelId=(typeof model==='object')?model.id:model;
+    var mode=(typeof model==='object'&&model.mode)?model.mode:'B';
+    var startTime=Date.now();
+
+    var systemMsg,userMsg;
+    if(mode==='A'){
+      systemMsg=Settings.modeA_BaoLian_SystemMsg||'你是一个专业的语音转写校对员，请修复ASR转写错误。';
+      userMsg=(Settings.modeA_BaoLian_UserMsg||'[豆包 ASR 文本]：{doubao_text}\n\n仅输出最终修复好的泰文文本。').replace('{doubao_text}',doubaoText||'');
+    }else{
+      systemMsg=Settings.modeB_BaoLian_SystemMsg||'你是一个专业的语音转写校对员，请交叉对比两个ASR版本并修复错误。';
+      userMsg=(Settings.modeB_BaoLian_UserMsg||'[文本版本1]：{qwen_text}\n[文本版本2]：{doubao_text}\n\n仅输出最终修复好的泰文文本。').replace('{qwen_text}',qwenText||'').replace('{doubao_text}',doubaoText||'');
+    }
+
+    var realModelId=fullModelId.replace(/^modeA_baolian_/,'').replace(/^modeA_fangzhou_/,'').replace(/^modeB_baolian_/,'').replace(/^modeB_fangzhou_/,'');
+
+    if(scheme==='fangzhou'){
+      var useStream=Settings.fangzhouDefaultStream!==false;
+      var messages=[];
+      if(mode==='A'){
+        var fzSysA=Settings.modeA_FangZhou_SystemMsg||systemMsg;
+        var fzUserA=Settings.modeA_FangZhou_UserMsg||userMsg;
+        messages.push({role:'system',content:fzSysA});
+        messages.push({role:'user',content:fzUserA.replace('{doubao_text}',doubaoText||'')});
+      }else{
+        var fzSysB=Settings.modeB_FangZhou_SystemMsg||systemMsg;
+        var fzUserB=Settings.modeB_FangZhou_UserMsg||userMsg;
+        messages.push({role:'system',content:fzSysB});
+        messages.push({role:'user',content:fzUserB.replace('{qwen_text}',qwenText||'').replace('{doubao_text}',doubaoText||'')});
+      }
+      var body={
+        model:realModelId,
+        messages:messages,
+        stream:useStream,
+        temperature:Settings.fangzhouDefaultTemperature||0.1,
+        top_p:Settings.fangzhouDefaultTopP||0.25,
+        thinking:{type:Settings.fangzhouDefaultEnableThinking?'enabled':'disabled'}
+      };
+      if(useStream)body.stream_options={include_usage:true};
+      var proxyUrl='/api/fangzhou/api/v3/chat/completions';
+      API._streamCorrect(proxyUrl,Settings.fangzhouApiKey,body,useStream,startTime,'方舟',onChunk,onDone);
+      return;
+    }
+
+    var apiUrl=Settings.bailianApiUrl||'https://dashscope.aliyuncs.com/compatible-mode/v1';
+    if(!apiUrl.includes('/chat/completions')){
+      if(apiUrl.endsWith('/'))apiUrl=apiUrl.slice(0,-1);
+      if(apiUrl.endsWith('/v1'))apiUrl+='/chat/completions';
+      else apiUrl+='/v1/chat/completions';
+    }
+    var useStream=Settings.bailianDefaultStream!==false;
+    var body={
+      model:realModelId,
+      messages:[{role:'system',content:systemMsg},{role:'user',content:userMsg}],
+      stream:useStream,
+      temperature:Settings.bailianDefaultTemperature||0.1,
+      top_p:Settings.bailianDefaultTopP||0.25,
+      enable_thinking:Settings.bailianDefaultEnableThinking===true
+    };
+    if(useStream)body.stream_options={include_usage:true};
+    var proxyUrl='/api/bailian'+apiUrl.replace('https://dashscope.aliyuncs.com','');
+    API._streamCorrect(proxyUrl,Settings.bailianApiKey,body,useStream,startTime,'百炼',onChunk,onDone);
+  },
+
+  _streamCorrect:function(proxyUrl,apiKey,body,useStream,startTime,platform,onChunk,onDone){
+    fetch(proxyUrl,{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+apiKey,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    }).then(function(resp){
+      if(!resp.ok)throw new Error('HTTP '+resp.status);
+      if(!useStream){
+        return resp.json().then(function(data){
+          var text=data.choices&&data.choices[0]&&data.choices[0].message?data.choices[0].message.content:'';
+          var elapsed=((Date.now()-startTime)/1000).toFixed(1);
+          onDone(null,text.trim()||'[AI改错结果为空]',elapsed);
+        });
+      }
+      var reader=resp.body.getReader();
+      var decoder=new TextDecoder();
+      var buffer='';
+      var answerContent='';
+      function process(){
+        reader.read().then(function(result){
+          if(result.done){var elapsed=((Date.now()-startTime)/1000).toFixed(1);onDone(null,answerContent.trim()||'[AI改错结果为空]',elapsed);return}
+          buffer+=decoder.decode(result.value,{stream:true});
+          var lines=buffer.split('\n');
+          buffer=lines.pop()||'';
+          for(var i=0;i<lines.length;i++){
+            var line=lines[i].trim();
+            if(!line||line==='data: [DONE]')continue;
+            if(line.startsWith('data: ')){
+              try{
+                var parsed=JSON.parse(line.slice(6));
+                if(!parsed.choices||parsed.choices.length===0){
+                  if(parsed.usage)console.log('[AI改错-'+platform+'] Token 消耗:',JSON.stringify(parsed.usage));
+                  continue;
+                }
+                var delta=parsed.choices[0].delta;
+                if(delta.content){answerContent+=delta.content;onChunk(answerContent)}
+              }catch(e){}
+            }
+          }
+          process();
+        }).catch(function(e){onDone(e)});
+      }
+      process();
+    }).catch(function(e){onDone(e)});
+  }
+};
+
+var AI_MODELS=[
+  {id:'modeA_baolian_qwen3.6-plus',name:'Qwen 3.6 Plus (单源)',scheme:'bailian',mode:'A'},
+  {id:'modeA_baolian_deepseek-v4-pro',name:'DeepSeek V4 (单源)',scheme:'bailian',mode:'A'},
+  {id:'modeA_baolian_glm-5.1',name:'GLM 5.1 (单源)',scheme:'bailian',mode:'A'},
+  {id:'modeA_baolian_kimi-k2.6',name:'Kimi K2.6 (单源)',scheme:'bailian',mode:'A'},
+  {id:'modeA_fangzhou_doubao-seed-2-0-pro-260215',name:'Doubao Seed 2.0 (单源)',scheme:'fangzhou',mode:'A'},
+  {id:'modeB_baolian_qwen3.6-plus',name:'Qwen 3.6 Plus (双ASR)',scheme:'bailian',mode:'B'},
+  {id:'modeB_baolian_deepseek-v4-pro',name:'DeepSeek V4 (双ASR)',scheme:'bailian',mode:'B'},
+  {id:'modeB_baolian_glm-5.1',name:'GLM 5.1 (双ASR)',scheme:'bailian',mode:'B'},
+  {id:'modeB_baolian_kimi-k2.6',name:'Kimi K2.6 (双ASR)',scheme:'bailian',mode:'B'},
+  {id:'modeB_fangzhou_doubao-seed-2-0-pro-260215',name:'Doubao Seed 2.0 (双ASR)',scheme:'fangzhou',mode:'B'}
+];
+
+var TranscribeCorrect={
+  isRunning:false,
+  doubaoResult:'',
+  qwenResult:'',
+  aiResults:{},
+  expandedModels:{},
+
+  updateView:function(){
+    var audio=App.audioFiles.find(function(a){return a.id===App.selectedAudioId});
+    if(!audio){
+      document.getElementById('tcNoAudio').style.display='block';
+      document.getElementById('tcContent').style.display='none';
+      return;
+    }
+    document.getElementById('tcNoAudio').style.display='none';
+    document.getElementById('tcContent').style.display='block';
+    document.getElementById('tcAudioName').textContent=audio.name;
+
+    var resultId=audio.id+'_asr';
+    DB.getResult(resultId).then(function(r){
+      if(r){
+        TranscribeCorrect.doubaoResult=r.doubaoText||'';
+        TranscribeCorrect.qwenResult=r.qwenText||'';
+        document.getElementById('tcDoubaoText').textContent=r.doubaoText||'';
+        document.getElementById('tcQwenText').textContent=r.qwenText||'';
+        TranscribeCorrect.setStatus('tcDoubao','completed');
+        TranscribeCorrect.setStatus('tcQwen','completed');
+        document.getElementById('tcDoubaoTime').textContent=r.doubaoTime||'';
+        document.getElementById('tcQwenTime').textContent=r.qwenTime||'';
+      }else{
+        document.getElementById('tcDoubaoText').textContent='';
+        document.getElementById('tcQwenText').textContent='';
+        TranscribeCorrect.setStatus('tcDoubao','idle');
+        TranscribeCorrect.setStatus('tcQwen','idle');
+        document.getElementById('tcDoubaoTime').textContent='';
+        document.getElementById('tcQwenTime').textContent='';
+      }
+    });
+
+    var correctResultId=audio.id+'_correct';
+    DB.getResult(correctResultId).then(function(r){
+      if(r&&r.corrections){
+        TranscribeCorrect.aiResults=r.corrections;
+        Object.keys(r.corrections).forEach(function(key){
+          var c=r.corrections[key];
+          var cardId='tc_ai_'+key;
+          var textEl=document.getElementById(cardId+'_text');
+          var statusEl=document.getElementById(cardId+'_status');
+          var timeEl=document.getElementById(cardId+'_time');
+          if(textEl&&c.text)textEl.textContent=c.text;
+          if(statusEl)statusEl.innerHTML='<span class="status-icon success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>完成';
+          if(timeEl&&c.time)timeEl.textContent=c.time;
+        });
+      }
+    });
+  },
+
+  setStatus:function(model,state){
+    var statusEl=document.getElementById(model+'Status');
+    if(!statusEl)return;
+    var icon='';
+    var text='等待中';
+    if(state==='running'){icon='<span class="status-dot progress"></span>';text='识别中...'}
+    else if(state==='polling'){icon='<span class="status-dot progress"></span>';text='轮询中...'}
+    else if(state==='completed'){icon='<span class="status-icon success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>';text='完成'}
+    else if(state==='error'){icon='<span class="status-icon error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>';text='失败'}
+    else{icon='<span class="status-dot progress"></span>';text='等待中'}
+    statusEl.innerHTML=icon+text;
+  },
+
+  setCardStatus:function(cardId,state,text){
+    var statusEl=document.getElementById(cardId+'_status');
+    if(!statusEl)return;
+    var icon='<span class="status-dot progress"></span>';
+    if(state==='completed')icon='<span class="status-icon success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>';
+    else if(state==='error')icon='<span class="status-icon error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>';
+    statusEl.innerHTML=icon+(text||state);
+  },
+
+  renderAiCards:function(){
+    var grid=document.getElementById('tcCorrectGrid');
+    var html='';
+    TranscribeCorrect.expandedModels={};
+    var sortedModels=TranscribeCorrect.getSortedModels();
+    sortedModels.forEach(function(model){
+      html+='<div class="ai-column" id="col_'+model.id+'">';
+      var cardId='tc_ai_'+model.id;
+      html+='<div class="glass ai-card" id="'+cardId+'" data-model-id="'+model.id+'">';
+      html+='<div class="ai-card-drag-handle" title="拖拽排序"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>';
+      html+='<div class="ai-card-header">';
+      html+='<span class="asr-source-tag">豆包 ASR</span>';
+      html+='<span style="font-size:11px">→</span>';
+      html+='<span class="model-tag ai">'+model.name+'</span>';
+      html+='<span class="status-text" id="'+cardId+'_status"><span class="status-dot progress"></span>等待中</span>';
+      html+='<span class="time-text" id="'+cardId+'_time"></span>';
+      html+='</div>';
+      html+='<div class="ai-card-body">';
+      html+='<div class="asr-text" id="'+cardId+'_text" style="min-height:40px" data-placeholder="修正结果..."></div>';
+      html+='</div>';
+      html+='<div class="ai-card-footer">';
+      html+='<button class="btn btn-ghost btn-sm copy-btn" data-target="'+cardId+'_text">';
+      html+='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      html+=' 复制</button>';
+      html+='<button class="btn btn-ghost btn-sm show-dual-btn" data-model-id="'+model.id+'" style="margin-left:auto">';
+      html+='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+      html+=' 显示双ASR结果</button>';
+      html+='</div>';
+      html+='</div>';
+      html+='<div class="dual-source-container" id="dual_'+model.id+'" style="display:none"></div>';
+      html+='</div>';
+    });
+    grid.innerHTML=html;
+
+    var prevClickHandler=grid._clickHandler;
+    if(prevClickHandler)grid.removeEventListener('click',prevClickHandler);
+    var newHandler=function(e){
+      var btn=e.target.closest('.show-dual-btn');
+      if(btn){
+        var modelId=btn.dataset.modelId;
+        TranscribeCorrect.toggleDualSource(modelId);
+        return;
+      }
+      var closeBtn=e.target.closest('.close-dual-btn');
+      if(closeBtn){
+        var modelId2=closeBtn.dataset.modelId;
+        TranscribeCorrect.hideDualSource(modelId2);
+        return;
+      }
+    };
+    grid._clickHandler=newHandler;
+    grid.addEventListener('click',newHandler);
+
+    TranscribeCorrect._dragState=null;
+    grid.querySelectorAll('.ai-card').forEach(function(card){
+      var handle=card.querySelector('.ai-card-drag-handle');
+      if(!handle)return;
+      handle.addEventListener('mousedown',function(e){
+        if(e.button!==0)return;
+        e.preventDefault();
+        TranscribeCorrect._startDrag(e,card,e.clientX,e.clientY);
+      });
+      handle.addEventListener('touchstart',function(e){
+        e.preventDefault();
+        var t=e.touches[0];
+        TranscribeCorrect._startDrag(e,card,t.clientX,t.clientY);
+      },{passive:false});
+    });
+  },
+
+  _startDrag:function(e,card,clientX,clientY){
+    var grid=document.getElementById('tcCorrectGrid');
+    var rect=card.getBoundingClientRect();
+    var ghost=card.cloneNode(true);
+    ghost.className=card.className.replace('dragging-ghost','')+' ai-drag-ghost';
+    ghost.style.setProperty('--ghost-width',rect.width+'px');
+    ghost.style.left=(clientX-rect.width/2)+'px';
+    ghost.style.top=(clientY-rect.height/2)+'px';
+    document.body.appendChild(ghost);
+
+    card.classList.add('dragging-ghost');
+    var placeholder=document.createElement('div');
+    placeholder.className='ai-card-drag-placeholder';
+    placeholder.style.height=rect.height+'px';
+    card.parentNode.insertBefore(placeholder,card);
+    card.style.display='none';
+
+    TranscribeCorrect._dragState={
+      card:card,
+      ghost:ghost,
+      placeholder:placeholder,
+      offsetX:clientX-rect.left,
+      offsetY:clientY-rect.top,
+      width:rect.width,
+      height:rect.height
+    };
+
+    var moveHandler=function(ev){
+      ev.preventDefault();
+      var cx=ev.clientX||(ev.touches&&ev.touches[0].clientX);
+      var cy=ev.clientY||(ev.touches&&ev.touches[0].clientY);
+      if(cx===undefined)return;
+      TranscribeCorrect._moveDrag(cx,cy);
+    };
+    var upHandler=function(ev){
+      ev.preventDefault();
+      TranscribeCorrect._endDrag();
+      document.removeEventListener('mousemove',moveHandler);
+      document.removeEventListener('mouseup',upHandler);
+      document.removeEventListener('touchmove',moveHandler);
+      document.removeEventListener('touchend',upHandler);
+    };
+    document.addEventListener('mousemove',moveHandler);
+    document.addEventListener('mouseup',upHandler);
+    document.addEventListener('touchmove',moveHandler,{passive:false});
+    document.addEventListener('touchend',upHandler,{passive:false});
+  },
+
+  _moveDrag:function(cx,cy){
+    var state=TranscribeCorrect._dragState;
+    if(!state)return;
+    var gh=state.ghost;
+    gh.style.left=(cx-state.offsetX)+'px';
+    gh.style.top=(cy-state.offsetY)+'px';
+
+    var grid=document.getElementById('tcCorrectGrid');
+    var allCards=Array.from(grid.querySelectorAll('.ai-card:not(.dragging-ghost)'));
+    var found=false;
+    for(var i=0;i<allCards.length;i++){
+      var c=allCards[i];
+      var r=c.getBoundingClientRect();
+      if(cy>=r.top&&cy<=r.bottom){
+        found=true;
+        var midY=r.top+r.height/2;
+        grid.querySelectorAll('.ai-card').forEach(function(el){el.classList.remove('drag-over-top','drag-over-bottom')});
+        if(cy<midY){
+          c.classList.add('drag-over-top');
+          if(state.placeholder.previousSibling!==c)c.parentNode.insertBefore(state.placeholder,c);
+        }else{
+          c.classList.add('drag-over-bottom');
+          if(state.placeholder.nextSibling!==c)c.parentNode.insertBefore(state.placeholder,c.nextSibling);
+        }
+        break;
+      }
+    }
+    if(!found){
+      grid.querySelectorAll('.ai-card').forEach(function(el){el.classList.remove('drag-over-top','drag-over-bottom')});
+    }
+  },
+
+  _endDrag:function(){
+    var state=TranscribeCorrect._dragState;
+    if(!state)return;
+    var card=state.card;
+    var placeholder=state.placeholder;
+    var ghost=state.ghost;
+
+    document.body.removeChild(ghost);
+
+    var grid=document.getElementById('tcCorrectGrid');
+    grid.querySelectorAll('.ai-card').forEach(function(el){el.classList.remove('drag-over-top','drag-over-bottom','dragging-ghost')});
+    card.style.display='';
+
+    if(placeholder.parentNode){
+      placeholder.parentNode.insertBefore(card,placeholder);
+      placeholder.parentNode.removeChild(placeholder);
+    }
+
+    var modelIds=Array.from(grid.querySelectorAll('.ai-column')).map(function(col){
+      var acard=col.querySelector('.ai-card');
+      return acard?acard.dataset.modelId:'';
+    }).filter(function(id){return id});
+
+    if(modelIds.length>0){
+      Settings.modelOrder=modelIds;
+      Settings.save();
+      TranscribeCorrect.renderAiCards();
+    }
+
+    TranscribeCorrect._dragState=null;
+  },
+
+  toggleDualSource:function(modelId){
+    var container=document.getElementById('dual_'+modelId);
+    if(!container)return;
+    if(container.style.display==='none'){
+      TranscribeCorrect.showDualSource(modelId,container);
+    }else{
+      TranscribeCorrect.hideDualSource(modelId);
+    }
+  },
+
+  showDualSource:function(modelId,container){
+    if(!container)container=document.getElementById('dual_'+modelId);
+    if(!container)return;
+    var modeB_Id='modeB_'+modelId.replace('modeA_','');
+    var modeB_Model=AI_MODELS.find(function(m){return m.id===modeB_Id});
+    if(!modeB_Model)return;
+    var cardId='tc_ai_'+modeB_Model.id;
+    var html='<div class="glass ai-card dual-source-card" id="'+cardId+'" style="margin-top:12px;border-left:3px solid rgba(168,216,234,0.5)">';
+    html+='<div class="ai-card-header">';
+    html+='<span class="asr-source-tag" style="background:rgba(168,216,234,0.15)">千问 ASR</span>';
+    html+='<span style="font-size:11px">+</span>';
+    html+='<span class="asr-source-tag" style="background:rgba(168,216,234,0.15)">豆包 ASR</span>';
+    html+='<span style="font-size:11px">→</span>';
+    html+='<span class="model-tag ai" style="background:rgba(168,216,234,0.2)">'+modeB_Model.name+'</span>';
+    html+='<span class="status-text" id="'+cardId+'_status"><span class="status-dot progress"></span>等待中</span>';
+    html+='<span class="time-text" id="'+cardId+'_time"></span>';
+    html+='<button class="btn btn-ghost btn-sm close-dual-btn" data-model-id="'+modelId+'" style="margin-left:auto;padding:4px 8px">✕</button>';
+    html+='</div>';
+    html+='<div class="ai-card-body">';
+    html+='<div class="asr-text" id="'+cardId+'_text" style="min-height:40px" data-placeholder="修正结果..."></div>';
+    html+='</div>';
+    html+='<div class="ai-card-footer">';
+    html+='<button class="btn btn-ghost btn-sm copy-btn" data-target="'+cardId+'_text">';
+    html+='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    html+=' 复制</button>';
+    html+='</div>';
+    html+='</div>';
+    container.innerHTML=html;
+    container.style.display='block';
+    TranscribeCorrect.expandedModels[modelId]=true;
+    var c=TranscribeCorrect.aiResults[modeB_Model.id];
+    if(c&&c.text){
+      var textEl=document.getElementById(cardId+'_text');
+      var statusEl=document.getElementById(cardId+'_status');
+      var timeEl=document.getElementById(cardId+'_time');
+      if(textEl)textEl.textContent=c.text;
+      if(statusEl)statusEl.innerHTML='<span class="status-icon success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>完成';
+      if(timeEl)timeEl.textContent=c.time;
+    }else{
+      TranscribeCorrect.runModeB(modelId);
+    }
+  },
+
+  hideDualSource:function(modelId){
+    var container=document.getElementById('dual_'+modelId);
+    if(container){
+      container.style.display='none';
+      container.innerHTML='';
+    }
+    delete TranscribeCorrect.expandedModels[modelId];
+  },
+
+  runModeB:function(modelId){
+    var audio=App.audioFiles.find(function(a){return a.id===App.selectedAudioId});
+    if(!audio)return;
+    var modeB_Id='modeB_'+modelId.replace('modeA_','');
+    var modeB_Model=AI_MODELS.find(function(m){return m.id===modeB_Id});
+    if(!modeB_Model)return;
+    var cardId='tc_ai_'+modeB_Model.id;
+    TranscribeCorrect.setCardStatus(cardId,'running','修正中...');
+    var textEl=document.getElementById(cardId+'_text');
+    if(textEl){textEl.textContent='';textEl.classList.add('streaming')}
+    TranscribeCorrect.runReal(cardId,modeB_Model,TranscribeCorrect.qwenResult,TranscribeCorrect.doubaoResult,function(){
+      TranscribeCorrect.saveAllResults(audio.id);
+    });
+  },
+
+  start:function(){
+    if(TranscribeCorrect.isRunning)return;
+    var audio=App.audioFiles.find(function(a){return a.id===App.selectedAudioId});
+    if(!audio)return;
+    TranscribeCorrect.isRunning=true;
+    var btn=document.getElementById('startTcBtn');
+    btn.disabled=true;
+    btn.style.opacity='0.5';
+
+    TranscribeCorrect.doubaoResult='';
+    TranscribeCorrect.qwenResult='';
+    TranscribeCorrect.aiResults={};
+    document.getElementById('tcDoubaoText').textContent='';
+    document.getElementById('tcQwenText').textContent='';
+    document.getElementById('tcDoubaoText').classList.add('streaming');
+    document.getElementById('tcQwenText').classList.add('streaming');
+    TranscribeCorrect.renderAiCards();
+
+    var asrCompleted=0;
+    function onAsrComplete(){
+      asrCompleted++;
+      if(asrCompleted===2){
+        TranscribeCorrect.startAiCorrection(audio.id);
+      }
+    }
+
+    if(audio.url){
+      TranscribeCorrect.runRealDoubao(audio.url,onAsrComplete);
+    }else{
+      TranscribeCorrect.setStatus('tcDoubao','error');
+      TranscribeCorrect.doubaoResult='[需要音频公网 URL 才能使用豆包 ASR]';
+      document.getElementById('tcDoubaoText').textContent=TranscribeCorrect.doubaoResult;
+      document.getElementById('tcDoubaoText').classList.remove('streaming');
+      onAsrComplete();
+    }
+    if(audio.url){
+      TranscribeCorrect.runRealQwenFromUrl(audio.url,onAsrComplete);
+    }else{
+      TranscribeCorrect.setStatus('tcQwen','error');
+      TranscribeCorrect.qwenResult='[需要音频公网 URL 才能使用千问 ASR]';
+      document.getElementById('tcQwenText').textContent=TranscribeCorrect.qwenResult;
+      document.getElementById('tcQwenText').classList.remove('streaming');
+      onAsrComplete();
+    }
+  },
+
+  runRealDoubao:function(audioUrl,onDone){
+    TranscribeCorrect.setStatus('tcDoubao','running');
+    API.doubaoASR(audioUrl,function(status){
+      document.getElementById('tcDoubaoStatus').innerHTML='<span class="status-dot progress"></span>'+status;
+    },function(err,text,elapsed){
+      if(err){
+        TranscribeCorrect.setStatus('tcDoubao','error');
+        document.getElementById('tcDoubaoStatus').innerHTML='<span class="status-dot error"></span>'+err.message;
+        TranscribeCorrect.doubaoResult='[错误: '+err.message+']';
+        document.getElementById('tcDoubaoText').textContent=TranscribeCorrect.doubaoResult;
+      }else{
+        TranscribeCorrect.doubaoResult=text||'[识别结果为空]';
+        document.getElementById('tcDoubaoText').textContent=TranscribeCorrect.doubaoResult;
+        TranscribeCorrect.setStatus('tcDoubao','completed');
+        document.getElementById('tcDoubaoTime').textContent=elapsed+'s';
+      }
+      document.getElementById('tcDoubaoText').classList.remove('streaming');
+      onDone();
+    });
+  },
+
+  runRealQwenFromUrl:function(audioUrl,onDone){
+    TranscribeCorrect.setStatus('tcQwen','running');
+    API.qwenASRFromUrl(audioUrl,function(fullText){
+      TranscribeCorrect.qwenResult=fullText;
+      document.getElementById('tcQwenText').textContent=fullText;
+    },function(err,text,elapsed){
+      if(err){
+        TranscribeCorrect.setStatus('tcQwen','error');
+        document.getElementById('tcQwenStatus').innerHTML='<span class="status-dot error"></span>'+err.message;
+        TranscribeCorrect.qwenResult='[错误: '+err.message+']';
+        document.getElementById('tcQwenText').textContent=TranscribeCorrect.qwenResult;
+      }else{
+        TranscribeCorrect.qwenResult=text||'[识别结果为空]';
+        document.getElementById('tcQwenText').textContent=TranscribeCorrect.qwenResult;
+        TranscribeCorrect.setStatus('tcQwen','completed');
+        document.getElementById('tcQwenTime').textContent=elapsed+'s';
+      }
+      document.getElementById('tcQwenText').classList.remove('streaming');
+      onDone();
+    });
+  },
+
+  startAiCorrection:function(audioId){
+    var modeA_Models=TranscribeCorrect.getSortedModels();
+    var completedCount=0;
+    var totalTasks=modeA_Models.length;
+
+    if(totalTasks===0){
+      TranscribeCorrect.onAllComplete(audioId);
+      return;
+    }
+
+    modeA_Models.forEach(function(model){
+      var cardId='tc_ai_'+model.id;
+      var textEl=document.getElementById(cardId+'_text');
+      TranscribeCorrect.setCardStatus(cardId,'running','修正中...');
+      if(textEl){textEl.textContent='';textEl.classList.add('streaming')}
+      TranscribeCorrect.runReal(cardId,model,TranscribeCorrect.qwenResult,TranscribeCorrect.doubaoResult,function(){
+        completedCount++;
+        if(completedCount>=totalTasks)TranscribeCorrect.onAllComplete(audioId);
+      });
+    });
+  },
+
+  runReal:function(cardId,modelObj,qwenText,doubaoText,onComplete){
+    var startTime=Date.now();
+    var textEl=document.getElementById(cardId+'_text');
+    API.aiCorrect(modelObj,qwenText,doubaoText,function(fullText){
+      if(textEl)textEl.textContent=fullText;
+    },function(err,text,elapsed){
+      if(err){
+        TranscribeCorrect.setCardStatus(cardId,'error',err.message);
+        if(textEl)textEl.textContent='[错误: '+err.message+']';
+      }else{
+        if(textEl)textEl.classList.remove('streaming');
+        TranscribeCorrect.setCardStatus(cardId,'completed','完成');
+        var timeEl=document.getElementById(cardId+'_time');
+        if(timeEl)timeEl.textContent=elapsed+'s';
+        TranscribeCorrect.aiResults[modelObj.id]={text:text||'',time:elapsed+'s'};
+      }
+      onComplete();
+    });
+  },
+
+  onAllComplete:function(audioId){
+    TranscribeCorrect.isRunning=false;
+    var btn=document.getElementById('startTcBtn');
+    btn.disabled=false;
+    btn.style.opacity='1';
+    TranscribeCorrect.saveAllResults(audioId);
+  },
+
+  saveAllResults:function(audioId){
+    var resultId=audioId+'_asr';
+    DB.saveResult(resultId,{
+      audioId:audioId,
+      doubaoText:TranscribeCorrect.doubaoResult,
+      qwenText:TranscribeCorrect.qwenResult,
+      doubaoTime:document.getElementById('tcDoubaoTime').textContent,
+      qwenTime:document.getElementById('tcQwenTime').textContent
+    });
+    var correctResultId=audioId+'_correct';
+    DB.saveResult(correctResultId,{audioId:audioId,corrections:TranscribeCorrect.aiResults});
+  },
+
+  getSortedModels:function(){
+    var order=Settings.modelOrder||[];
+    var enabled=Settings.modelEnabled||{};
+    var availableModels=AI_MODELS.filter(function(m){return m.mode==='A'});
+    var sorted=[];
+    order.forEach(function(id){
+      var m=availableModels.find(function(am){return am.id===id});
+      if(m&&(enabled[id]!==false)){
+        sorted.push(m);
+      }
+    });
+    availableModels.forEach(function(m){
+      if(sorted.indexOf(m)===-1&&(enabled[m.id]!==false)){
+        sorted.push(m);
+      }
+    });
+    return sorted;
+  },
+
+  openModelSelector:function(){
+    var modal=document.getElementById('modelSelectorModal');
+    var list=document.getElementById('modelSelectorList');
+    var order=Settings.modelOrder||[];
+    var enabled=Settings.modelEnabled||{};
+
+    var allModels=AI_MODELS.filter(function(m){return m.mode==='A'});
+    var sortedModels=[];
+    order.forEach(function(id){
+      var m=allModels.find(function(am){return am.id===id});
+      if(m)sortedModels.push(m);
+    });
+    allModels.forEach(function(m){
+      if(sortedModels.indexOf(m)===-1)sortedModels.push(m);
+    });
+
+    var html='';
+    sortedModels.forEach(function(model){
+      var isChecked=enabled[model.id]!==false;
+      var schemeLabel=model.scheme==='bailian'?'百炼':'方舟';
+      var modeLabel=model.mode==='A'?'单源修正':'双ASR修正';
+      html+='<div class="model-selector-item" data-model-id="'+model.id+'">';
+      html+='<label class="model-selector-toggle toggle-switch"><input type="checkbox" data-toggle-model="'+model.id+'"'+(isChecked?' checked':'')+'><span class="toggle-track"></span></label>';
+      html+='<div class="model-selector-info">';
+      html+='<div class="model-selector-name">'+model.name+'</div>';
+      html+='<div class="model-selector-scheme">'+schemeLabel+' · '+modeLabel+'</div>';
+      html+='</div></div>';
+    });
+    list.innerHTML=html;
+
+    modal.classList.add('show');
+  },
+
+  saveModelSelector:function(){
+    var list=document.getElementById('modelSelectorList');
+    var items=list.querySelectorAll('.model-selector-item');
+    var newOrder=[];
+    var newEnabled={};
+    items.forEach(function(item){
+      var modelId=item.dataset.modelId;
+      newOrder.push(modelId);
+      var checkbox=item.querySelector('input[data-toggle-model="'+modelId+'"]');
+      newEnabled[modelId]=checkbox&&checkbox.checked;
+    });
+    Settings.modelOrder=newOrder;
+    Settings.modelEnabled=newEnabled;
+    Settings.save();
+    document.getElementById('modelSelectorModal').classList.remove('show');
+    TranscribeCorrect.renderAiCards();
+  }
+};
+
+App.init();
+</script>
+</body>
+</html>
