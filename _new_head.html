@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASR 转写与 AI 修正评估平台</title>
+<script src="https://cdn.jsdelivr.net/npm/diff-match-patch@1.0.5/index.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:#4F46E5;--primary-dark:#4338CA;--primary-light:#EEF2FF;
+  --asr:#059669;--asr-dark:#047857;--asr-light:#ECFDF5;
+  --ai:#7C3AED;--ai-dark:#6D28D9;--ai-light:#F5F3FF;
+  --error:#DC2626;
+  --bg:#F1F5F9;--card:#FFFFFF;
+  --text:#0F172A;--text-secondary:#64748B;
+  --border:#E2E8F0;
+  --radius-card:12px;--radius-btn:8px;--radius-input:8px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'SF Mono','Fira Code','Menlo',monospace;
+}
+html,body{height:100%;font-family:var(--font);color:var(--text);background:var(--bg);overflow:hidden}
+body{
+  background:
+    radial-gradient(ellipse 600px 400px at 15% 20%,rgba(79,70,229,0.04),transparent),
+    radial-gradient(ellipse 500px 500px at 80% 30%,rgba(5,150,105,0.03),transparent),
+    var(--bg);
+}
+
+.glass{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius-card);
+  box-shadow:0 1px 3px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);
+  transition:box-shadow 200ms ease;
+}
+.glass:hover{
+  box-shadow:0 4px 12px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);
+}
+
+.nav-bar{
+  position:fixed;top:0;left:0;right:0;z-index:50;
+  height:56px;display:flex;align-items:center;padding:0 24px;gap:8px;
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  box-shadow:0 1px 3px rgba(0,0,0,0.05);
+}
+.nav-logo{
+  font-size:18px;font-weight:700;color:var(--primary);
+  margin-right:24px;white-space:nowrap;letter-spacing:-0.3px;
+  display:flex;align-items:center;gap:8px;
+}
+.nav-logo svg{width:24px;height:24px}
+.nav-tabs{
+  display:flex;gap:0;
+  background:var(--border);
+  border-radius:8px;
+  padding:3px;
+  flex:1;
+}
+.nav-tab{
+  padding:6px 18px;border-radius:6px;
+  font-size:14px;font-weight:500;cursor:pointer;
+  color:var(--text-secondary);border:none;background:transparent;
+  transition:all 200ms ease;position:relative;white-space:nowrap;
+}
+.nav-tab:hover{color:var(--text)}
+.nav-tab.active{
+  background:var(--card);color:var(--primary);font-weight:600;
+  box-shadow:0 1px 3px rgba(0,0,0,0.1);
+}
+.nav-settings{
+  width:36px;height:36px;border-radius:50%;border:none;background:transparent;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  color:var(--text-secondary);transition:all 200ms;
+}
+.nav-settings:hover{background:rgba(79,70,229,0.08);color:var(--primary)}
+.nav-settings svg{width:20px;height:20px}
+
+.main-content{
+  position:fixed;top:56px;left:0;right:0;bottom:72px;
+  overflow-y:auto;padding:24px;
+  scroll-behavior:smooth;
+}
+.tab-view{display:none;animation:fadeIn 300ms ease}
+.tab-view.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.url-hint-card{
+  background:var(--primary-light);
+  border:1px solid var(--border);
+  border-left:3px solid var(--primary);
+  border-radius:var(--radius-card);
+  padding:16px 18px;
+  margin-bottom:16px;
+}
+.url-hint-card .upload-title{font-size:15px;font-weight:600;color:var(--text)}
+.url-hint-card .upload-subtitle{font-size:13px;color:var(--text-secondary);margin-top:4px}
+
+.upload-area{
+  padding:48px 24px;text-align:center;cursor:pointer;
+  border:2px dashed var(--border);
+  border-radius:var(--radius-card);
+  background:var(--card);
+  transition:all 300ms ease;margin-bottom:20px;
+}
+.upload-area.drag-over{
+  border-color:var(--primary);
+  background:var(--primary-light);
+  animation:breathe 1.5s ease-in-out infinite;
+}
+@keyframes breathe{0%,100%{border-color:var(--border)}50%{border-color:var(--primary)}}
+.upload-icon{margin-bottom:12px;color:var(--primary)}
+.upload-icon svg{width:48px;height:48px}
+.upload-title{font-size:16px;font-weight:600}
+.upload-subtitle{font-size:13px;color:var(--text-secondary)}
+
+.audio-url-row{
+  display:flex;gap:10px;margin-bottom:20px;align-items:center;
+}
+.audio-url-row input{
+  flex:1;padding:10px 14px;border-radius:var(--radius-input);
+  border:1px solid var(--border);background:var(--card);
+  font-size:13px;font-family:var(--font);outline:none;
+  transition:border-color 200ms,box-shadow 200ms;
+}
+.audio-url-row input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,0.1)}
+.audio-url-row input::placeholder{color:var(--text-secondary)}
+
+.btn{
+  padding:10px 20px;border-radius:var(--radius-btn);
+  border:none;font-size:13px;font-weight:600;cursor:pointer;
+  transition:all 200ms ease;font-family:var(--font);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-asr{background:var(--asr);color:#fff}
+.btn-asr:hover{background:var(--asr-dark)}
+.btn-ai{background:var(--ai);color:#fff}
+.btn-ai:hover{background:var(--ai-dark)}
+.btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn svg{width:16px;height:16px}
+
+.audio-list{display:flex;flex-direction:column;gap:10px}
+.audio-item{
+  padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;
+  border:2px solid transparent;
+}
+.audio-item:hover{
+  border-color:var(--primary);
+  box-shadow:0 0 0 3px rgba(79,70,229,0.1);
+}
+.audio-item.selected{background:var(--primary-light);border-color:var(--primary)}
+.audio-item-icon{width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.audio-item-icon svg{width:20px;height:20px;color:var(--primary)}
+.audio-item-info{flex:1;min-width:0}
+.audio-item-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.audio-item-meta{font-size:12px;color:var(--text-secondary);margin-top:2px;display:flex;gap:12px}
+.audio-item-actions{display:flex;gap:6px;flex-shrink:0}
+.audio-item-actions .btn-sm{opacity:0;transition:opacity 200ms}
+.audio-item:hover .audio-item-actions .btn-sm{opacity:1}
+
+.player-bar{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;
+  height:72px;display:flex;align-items:center;padding:0 24px;gap:16px;
+  background:var(--card);
+  border-top:1px solid var(--border);
+  box-shadow:0 -1px 3px rgba(0,0,0,0.05);
+}
+.player-play{
+  width:40px;height:40px;border-radius:50%;border:none;
+  background:var(--primary);cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:all 200ms;flex-shrink:0;
+}
+.player-play:hover{background:var(--primary-dark);transform:scale(1.05)}
+.player-play svg{width:18px;height:18px;color:#fff;fill:currentColor}
+.player-progress{flex:1;display:flex;align-items:center;gap:10px}
+.player-time{font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);min-width:42px;text-align:center}
+.player-slider{
+  flex:1;height:6px;border-radius:3px;background:var(--border);
+  position:relative;cursor:pointer;overflow:hidden;
+}
+.player-slider-fill{
+  height:100%;background:var(--primary);border-radius:3px;
+  transition:width 100ms linear;pointer-events:none;
+}
+.player-slider-thumb{
+  width:14px;height:14px;border-radius:50%;background:#fff;
+  border:2px solid var(--primary);position:absolute;top:50%;
+  transform:translate(-50%,-50%);pointer-events:none;
+  box-shadow:0 1px 4px rgba(0,0,0,0.1);transition:left 100ms linear;
+}
+.player-name{font-size:13px;font-weight:500;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.player-speed-wrapper{position:relative;flex-shrink:0}
+.player-speed{
+  padding:4px 10px;border-radius:8px;border:1px solid var(--border);
+  background:var(--card);font-size:12px;font-weight:600;
+  cursor:pointer;color:var(--text-secondary);transition:all 200ms;
+  font-family:var(--font-mono);
+}
+.player-speed:hover{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
+.player-speed-menu{
+  position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:var(--card);
+  border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.1),0 2px 8px rgba(0,0,0,0.06);
+  padding:6px;min-width:80px;display:none;z-index:60;
+  animation:menuIn 200ms ease;
+}
+.player-speed-menu.show{display:block}
+@keyframes menuIn{from{opacity:0;transform:translateX(-50%) translateY(4px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.player-speed-option{
+  padding:8px 16px;text-align:center;font-size:12px;font-weight:600;
+  font-family:var(--font-mono);cursor:pointer;border-radius:6px;
+  color:var(--text-secondary);transition:all 150ms;
+}
+.player-speed-option:hover{background:var(--primary-light);color:var(--primary)}
+.player-speed-option.active{color:var(--primary);background:var(--primary-light)}
+
+.modal-overlay{
+  position:fixed;inset:0;z-index:100;background:rgba(15,23,42,0.4);
+  display:none;align-items:center;justify-content:center;
+  animation:modalBgIn 200ms ease;
+}
+.modal-overlay.show{display:flex}
+@keyframes modalBgIn{from{opacity:0}to{opacity:1}}
+.modal{
+  width:90%;max-width:480px;padding:28px;
+  animation:modalIn 300ms cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes modalIn{from{opacity:0;transform:scale(0.95) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:16px}
+.modal textarea{
+  width:100%;min-height:120px;padding:12px;border-radius:var(--radius-input);
+  border:1px solid var(--border);background:var(--card);
+  font-size:14px;font-family:var(--font-mono);resize:vertical;outline:none;
+  transition:border-color 200ms,box-shadow 200ms;
+}
+.modal textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,0.1)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+.settings-panel{
+  position:fixed;top:56px;right:0;width:400px;bottom:0;z-index:60;
+  padding:24px;overflow-y:auto;
+  background:var(--card);
+  border-left:1px solid var(--border);
+  box-shadow:-4px 0 12px rgba(0,0,0,0.05);
+  transform:translateX(100%);transition:transform 300ms cubic-bezier(0.4,0,0.2,1);
+}
+.settings-panel.open{transform:translateX(0)}
+.settings-title{font-size:18px;font-weight:700;margin-bottom:20px}
+.settings-section{
+  margin-bottom:20px;padding-top:16px;
+  border-top:1px solid var(--border);
+}
+.settings-section:first-of-type{border-top:none;padding-top:0}
+.settings-section-title{
+  font-size:14px;font-weight:600;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.settings-section-dot{
+  width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;
+}
+.settings-group{margin-bottom:12px}
+.settings-label{font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.settings-row{display:flex;align-items:center;gap:10px}
+.toggle{
+  width:44px;height:24px;border-radius:12px;background:var(--border);
+  cursor:pointer;position:relative;transition:background 200ms;border:none;flex-shrink:0;
+}
+.toggle.on{background:var(--primary)}
+.toggle-knob{
+  width:20px;height:20px;border-radius:50%;background:#fff;
+  position:absolute;top:2px;left:2px;transition:left 200ms;
+  box-shadow:0 1px 3px rgba(0,0,0,0.15);
+}
+.toggle.on .toggle-knob{left:22px}
+.input-with-btn{display:flex;gap:6px;flex:1}
+.input-with-btn input{
+  flex:1;padding:8px 12px;border-radius:var(--radius-input);
+  border:1px solid var(--border);background:var(--card);
+  font-size:13px;font-family:var(--font);outline:none;transition:border-color 200ms,box-shadow 200ms;
+}
+.input-with-btn input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,0.1)}
+.input-with-btn button{
+  width:32px;height:32px;border-radius:8px;border:1px solid var(--border);
+  background:var(--card);cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:all 200ms;flex-shrink:0;
+}
+.input-with-btn button:hover{background:var(--primary-light);border-color:var(--primary)}
+.input-with-btn button svg{width:16px;height:16px;color:var(--text-secondary)}
+
+.placeholder-view{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:400px;text-align:center;
+}
+.placeholder-icon{margin-bottom:16px;color:var(--text-secondary)}
+.placeholder-icon svg{width:64px;height:64px}
+.placeholder-text{font-size:18px;font-weight:600;color:var(--text-secondary)}
+.placeholder-sub{font-size:13px;color:var(--text-secondary);margin-top:6px;opacity:0.6}
+
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.pulse{animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)}}
+.status-dot.success{background:var(--asr)}
+.status-dot.error{background:var(--error)}
+.status-dot.progress{background:var(--primary);animation:pulse 1.5s ease-in-out infinite}
+.status-icon{display:inline-block;margin-right:6px;vertical-align:middle}
+.status-icon svg{width:14px;height:14px}
+.status-icon.success svg{color:var(--asr)}
+.status-icon.error svg{color:var(--error)}
+
+.empty-state{text-align:center;padding:60px 24px;color:var(--text-secondary)}
+.empty-state svg{width:48px;height:48px;margin-bottom:12px;opacity:0.4}
+.empty-state p{font-size:14px}
+
+.section-title{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section-title svg{width:18px;height:18px;color:var(--primary)}
+
+.transcribe-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.transcribe-audio-name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.asr-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.asr-card{padding:0;overflow:visible}
+.asr-card-header{padding:14px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.asr-card-body{padding:16px 18px}
+.asr-card-footer{padding:10px 18px;display:flex;justify-content:flex-end;border-top:1px solid var(--border)}
+.model-tag{padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600}
+.model-tag.asr{background:var(--asr-light);color:var(--asr)}
+.model-tag.ai{background:var(--ai-light);color:var(--ai)}
+.status-text{font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px}
+.time-text{font-size:12px;color:var(--text-secondary);margin-left:auto;font-family:var(--font-mono)}
+.asr-text{font-family:var(--font-mono);font-size:14px;line-height:1.7;min-height:60px;white-space:pre-wrap;word-break:break-all;outline:none;padding:8px;border-radius:8px;transition:background 200ms}
+.asr-text:focus{background:rgba(79,70,229,0.04);box-shadow:0 0 0 2px rgba(79,70,229,0.1)}
+.asr-text.streaming{color:var(--text-secondary)}
+
+.correct-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.correct-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ai-column{display:flex;flex-direction:column;gap:12px}
+.ai-column-title{font-size:13px;font-weight:700;text-align:center;padding:8px;border-radius:10px;background:var(--ai-light);color:var(--ai)}
+.ai-card{padding:0;overflow:visible;transition:box-shadow 200ms}
+.ai-card:hover{box-shadow:0 4px 16px rgba(0,0,0,0.08)}
+.ai-card-header{padding:12px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.ai-card-body{padding:14px}
+.ai-card-footer{padding:8px 14px;display:flex;justify-content:flex-end;border-top:1px solid var(--border)}
+.asr-source-tag{font-size:11px;padding:2px 8px;border-radius:4px;background:var(--asr-light);color:var(--asr)}
+.highlight-diff{background:rgba(124,58,237,0.12);border-radius:2px;padding:0 1px}
+
+.spin-icon{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+.no-audio-hint{text-align:center;padding:80px 24px;color:var(--text-secondary)}
+.no-audio-hint svg{width:48px;height:48px;margin-bottom:12px;opacity:0.4}
+.no-audio-hint p{font-size:14px}
+
+.toggle-switch{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none}
+.toggle-switch input{display:none}
+.toggle-switch .toggle-track{
+  width:36px;height:20px;border-radius:10px;background:var(--border);
+  position:relative;transition:background 200ms;
+}
+.toggle-switch input:checked+.toggle-track{background:var(--primary)}
+.toggle-switch .toggle-track::after{
+  content:'';width:16px;height:16px;border-radius:50%;background:#fff;
+  position:absolute;top:2px;left:2px;transition:left 200ms;
+  box-shadow:0 1px 3px rgba(0,0,0,0.15);
+}
+.toggle-switch input:checked+.toggle-track::after{left:18px}
+
+.score-section{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.score-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.score-label{font-size:12px;color:var(--text-secondary);min-width:48px}
+.score-slider{
+  flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;
+  background:var(--border);outline:none;cursor:pointer;
+}
+.score-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--primary);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.15);
+}
+.score-value{font-size:12px;font-weight:600;min-width:20px;text-align:center;font-family:var(--font-mono)}
+
+.model-selector-item{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;
+  border-radius:10px;background:var(--card);border:1px solid var(--border);
+  transition:all 200ms;
+}
+.model-selector-item:hover{border-color:var(--primary);box-shadow:0 2px 8px rgba(79,70,229,0.08)}
+.model-selector-toggle{flex-shrink:0}
+.model-selector-info{flex:1;min-width:0}
+.model-selector-name{font-size:13px;font-weight:600}
+.model-selector-scheme{font-size:11px;color:var(--text-secondary);margin-top:1px}
+
+.ai-card.dragging-ghost{opacity:0.3;border:1px dashed var(--primary)}
+.ai-card.drag-over-top{border-top:3px solid var(--primary)}
+.ai-card.drag-over-bottom{border-bottom:3px solid var(--primary)}
+.ai-card-drag-handle{
+  width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+  color:var(--text-secondary);flex-shrink:0;cursor:grab;padding:4px;border-radius:4px;
+  opacity:0.4;transition:opacity 200ms;
+}
+.ai-card:hover .ai-card-drag-handle{opacity:0.8}
+.ai-card-drag-handle:hover{opacity:1!important;background:rgba(79,70,229,0.06)}
+.ai-card-drag-handle svg{width:14px;height:14px}
+.ai-card-drag-placeholder{
+  border:2px dashed var(--primary);border-radius:12px;background:var(--primary-light);
+  min-height:100px;transition:all 150ms;
+}
+.ai-drag-ghost{
+  position:fixed;z-index:9999;pointer-events:none;opacity:0.85;
+  box-shadow:0 8px 32px rgba(0,0,0,0.15);border-radius:12px;
+  width:var(--ghost-width,300px);
+}
+
+.dual-source-container{margin-top:0}
+.show-dual-btn,.close-dual-btn{cursor:pointer}
+
+.settings-panel input[type="text"],
+.settings-panel input[type="password"]{
+  width:100%;padding:8px 12px;border-radius:var(--radius-input);
+  border:1px solid var(--border);background:var(--card);
+  font-size:13px;font-family:var(--font);outline:none;
+  transition:border-color 200ms,box-shadow 200ms;
+}
+.settings-panel input[type="text"]:focus,
+.settings-panel input[type="password"]:focus{
+  border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,0.1);
+}
+.settings-panel textarea{
+  width:100%;min-height:80px;padding:8px 12px;border-radius:var(--radius-input);
+  border:1px solid var(--border);background:var(--card);
+  font-size:12px;font-family:var(--font-mono);resize:vertical;outline:none;
+  transition:border-color 200ms,box-shadow 200ms;
+}
+.settings-panel textarea:focus{
+  border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,0.1);
+}
+</style>
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="nav-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    ASR 评估
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-tab="library">音频库</button>
+    <button class="nav-tab" data-tab="transcribe-correct">转写与修正</button>
+  </div>
+  <button class="nav-settings" id="settingsBtn" title="设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</nav>
+
+<div class="main-content">
+  <div class="tab-view active" id="tab-library">
+    <div class="url-hint-card">
+      <div class="upload-title">请输入音频公网 URL 进行评测</div>
+      <div class="upload-subtitle">推荐使用可跨域访问的 URL（或部署本地代理服务）</div>
+    </div>
+    <div class="audio-url-row">
+      <input type="text" id="audioUrlInput" placeholder="输入音频公网 URL（用于豆包/千问 ASR）">
+      <button class="btn btn-primary btn-sm" id="addUrlBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        添加
+      </button>
+    </div>
+    <div class="section-title" style="justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        音频列表
+      </div>
+      <button class="btn btn-ghost btn-sm" id="exportBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        导出全部数据
+      </button>
+    </div>
+    <div class="audio-list" id="audioList">
+      <div class="empty-state" id="emptyAudio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+        <p>暂无音频，请添加音频 URL</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-view" id="tab-transcribe-correct">
+    <div class="no-audio-hint" id="tcNoAudio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+      <p>请先在音频库中选择一个音频</p>
+    </div>
+    <div id="tcContent" style="display:none">
+      <div class="transcribe-header">
+        <div class="transcribe-audio-name">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;color:var(--primary)"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span id="tcAudioName">--</span>
+        </div>
+        <button class="btn btn-primary" id="startTcBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3 19,12 5,21"/></svg>
+          开始转写并修正
+        </button>
+      </div>
+      <div class="section-title" style="margin-top:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+        ASR 转写结果
+      </div>
+      <div class="asr-cards" id="tcAsrCards">
+        <div class="glass asr-card" id="tcDoubaoCard">
+          <div class="asr-card-header">
+            <span class="model-tag asr">豆包 ASR</span>
+            <span class="status-text" id="tcDoubaoStatus"><span class="status-dot progress"></span>等待中</span>
+            <span class="time-text" id="tcDoubaoTime"></span>
+          </div>
+          <div class="asr-card-body">
+            <div class="asr-text" id="tcDoubaoText" contenteditable="true" data-placeholder="转写结果将显示在此处..."></div>
+          </div>
+          <div class="asr-card-footer">
+            <button class="btn btn-ghost btn-sm copy-btn" data-target="tcDoubaoText">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              复制
+            </button>
+          </div>
+        </div>
+        <div class="glass asr-card" id="tcQwenCard">
+          <div class="asr-card-header">
+            <span class="model-tag asr">千问 ASR</span>
+            <span class="status-text" id="tcQwenStatus"><span class="status-dot progress"></span>等待中</span>
+            <span class="time-text" id="tcQwenTime"></span>
+          </div>
+          <div class="asr-card-body">
+            <div class="asr-text" id="tcQwenText" contenteditable="true" data-placeholder="转写结果将显示在此处..."></div>
+          </div>
+          <div class="asr-card-footer">
+            <button class="btn btn-ghost btn-sm copy-btn" data-target="tcQwenText">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              复制
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="section-title" style="margin-top:24px;justify-content:space-between;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          AI 交叉修正结果
+        </div>
+        <button class="btn btn-ghost btn-sm" id="openModelSelectorBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><circle cx="18" cy="18" r="3"/><circle cx="6" cy="18" r="3"/></svg>
+          选择模型
+        </button>
+      </div>
+      <div class="correct-grid" id="tcCorrectGrid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="player-bar" id="playerBar">
+  <button class="player-play" id="playerPlayBtn">
+    <svg id="playIcon" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+    <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+  </button>
+  <div class="player-progress">
+    <span class="player-time" id="playerCurrentTime">0:00</span>
+    <div class="player-slider" id="playerSlider">
+      <div class="player-slider-fill" id="playerSliderFill" style="width:0%"></div>
+      <div class="player-slider-thumb" id="playerSliderThumb" style="left:0%"></div>
+    </div>
+    <span class="player-time" id="playerTotalTime">0:00</span>
+  </div>
+  <div class="player-speed-wrapper">
+    <button class="player-speed" id="playerSpeedBtn">1.0x</button>
+    <div class="player-speed-menu" id="playerSpeedMenu">
+      <div class="player-speed-option" data-rate="0.5">0.5x</div>
+      <div class="player-speed-option" data-rate="0.75">0.75x</div>
+      <div class="player-speed-option active" data-rate="1.0">1.0x</div>
+      <div class="player-speed-option" data-rate="1.25">1.25x</div>
+      <div class="player-speed-option" data-rate="1.5">1.5x</div>
+      <div class="player-speed-option" data-rate="2.0">2.0x</div>
+    </div>
+  </div>
+  <div class="player-name" id="playerName">未选择音频</div>
+</div>
+
+<div class="modal-overlay" id="modelSelectorModal">
+  <div class="glass modal" style="max-width:560px">
+    <div class="modal-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>选择 AI 修正模型</span>
+      <span style="font-size:12px;color:var(--text-secondary);font-weight:400">拖拽调整顺序，点击开关启用/禁用</span>
+    </div>
+    <div id="modelSelectorList" style="max-height:400px;overflow-y:auto;padding-right:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modelSelectorCancel">取消</button>
+      <button class="btn btn-primary" id="modelSelectorSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="gtModal">
+  <div class="glass modal">
+    <div class="modal-title">输入参考文本</div>
+    <textarea id="gtTextarea" placeholder="请输入该音频的正确文本内容（Ground Truth）..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="gtCancelBtn">取消</button>
+      <button class="btn btn-primary" id="gtSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-title">设置</div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--primary)"></span>
+      基础设置
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">豆包 API Key</div>
+      <div class="input-with-btn">
+        <input type="password" id="doubaoKeyInput" placeholder="输入豆包 API Key" value="">
+        <button id="toggleDoubaoKey" title="显示/隐藏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button id="clearDoubaoKey" title="清除">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">百炼 API Key</div>
+      <div class="input-with-btn">
+        <input type="password" id="qwenKeyInput" placeholder="输入百炼 API Key" value="">
+        <button id="toggleQwenKey" title="显示/隐藏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button id="clearQwenKey" title="清除">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--asr)"></span>
+      豆包 ASR 参数
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">识别语言</div>
+      <input type="text" id="doubaoLangInput" placeholder="留空=自动检测，如 zh-CN、th-TH">
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">逆文本标准化 (ITN)</span>
+        <button class="toggle" id="doubaoItnToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">标点恢复</span>
+        <button class="toggle on" id="doubaoPuncToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用上下文</span>
+        <button class="toggle" id="doubaoCtxToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="display:none" id="doubaoCtxDataGroup">
+      <div class="settings-label">上下文数据 (JSON)</div>
+      <textarea id="doubaoCtxDataInput" placeholder='{"context_type":"dialog_ctx","context_data":[{"text":"..."}]}'></textarea>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--asr)"></span>
+      千问 ASR 参数
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">模型名称</div>
+      <input type="text" id="qwenModelInput" placeholder="如 qwen3-asr-flash">
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">识别语言</div>
+      <input type="text" id="qwenLangInput" placeholder="留空=自动检测，如 zh-CN、th-TH">
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">逆文本标准化 (ITN)</span>
+        <button class="toggle" id="qwenItnToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用系统提示词</span>
+        <button class="toggle" id="qwenSysToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group" style="display:none" id="qwenSysMsgGroup">
+      <div class="settings-label">系统提示词</div>
+      <textarea id="qwenSysMsgInput" placeholder="你是一个专业的语音识别助手，请将音频内容准确转写为文字。"></textarea>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--ai)"></span>
+      AI 修正模式 A：豆包单源修正
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">仅将豆包 ASR 结果交给 AI 模型修正（4 个百炼模型 + 1 个方舟模型）</div>
+    <div class="settings-group">
+      <div class="settings-label">系统提示词</div>
+      <textarea id="modeA_BaoLian_SystemMsgInput"></textarea>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">用户提示词模板</div>
+      <textarea id="modeA_BaoLian_UserMsgInput" style="min-height:40px"></textarea>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">占位符：{doubao_text}</div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用百炼模型</span>
+        <button class="toggle on" id="modeA_BaoLian_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用方舟模型</span>
+        <button class="toggle on" id="modeA_FangZhou_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--ai)"></span>
+      AI 修正模式 B：双 ASR 交叉修正
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">将豆包 ASR + 千问 ASR 结果交叉对比后交给 AI 模型修正（4 个百炼模型 + 1 个方舟模型）</div>
+    <div class="settings-group">
+      <div class="settings-label">系统提示词</div>
+      <textarea id="modeB_BaoLian_SystemMsgInput"></textarea>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">用户提示词模板</div>
+      <textarea id="modeB_BaoLian_UserMsgInput" style="min-height:40px"></textarea>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">占位符：{qwen_text}、{doubao_text}</div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用百炼模型</span>
+        <button class="toggle on" id="modeB_BaoLian_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">启用方舟模型</span>
+        <button class="toggle on" id="modeB_FangZhou_EnableToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--primary)"></span>
+      阿里百炼平台（4 个模型）
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Qwen 3.6 Plus · DeepSeek V4 · GLM 5.1 · Kimi K2.6</div>
+    <div class="settings-group">
+      <div class="settings-label">API 基础地址</div>
+      <input type="text" id="blApiUrlInput" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">API Key</div>
+      <input type="password" id="blApiKeyInput" placeholder="输入阿里百炼 API Key">
+    </div>
+    <div class="settings-group" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
+      <div class="settings-label" style="font-size:12px">默认参数（所有模型共用）</div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">温度 (temperature)</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="blTempSlider" min="0" max="2" step="0.05" value="0.1" style="flex:1">
+        <span id="blTempValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.1</span>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">Top-P</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="blTopPSlider" min="0" max="1" step="0.05" value="0.25" style="flex:1">
+        <span id="blTopPValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.25</span>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">流式输出</span>
+        <button class="toggle on" id="blStreamToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">深度思考</span>
+        <button class="toggle" id="blThinkingToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">
+      <span class="settings-section-dot" style="background:var(--primary)"></span>
+      火山方舟平台（1 个模型）
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Doubao Seed 2.0 Pro</div>
+    <div class="settings-group">
+      <div class="settings-label">API Key</div>
+      <input type="password" id="fzApiKeyInput" placeholder="输入火山方舟 API Key">
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">温度 (temperature)</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="fzTempSlider" min="0" max="2" step="0.05" value="0.1" style="flex:1">
+        <span id="fzTempValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.1</span>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">Top-P</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="fzTopPSlider" min="0" max="1" step="0.05" value="0.25" style="flex:1">
+        <span id="fzTopPValue" style="font-size:12px;font-family:var(--font-mono);min-width:36px;text-align:center">0.25</span>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">流式输出</span>
+        <button class="toggle on" id="fzStreamToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-row">
+        <span style="font-size:13px;flex:1">深度思考</span>
+        <button class="toggle" id="fzThinkingToggle"><div class="toggle-knob"></div></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-group" style="margin-top:24px">
+    <button class="btn btn-primary" id="saveSettingsBtn" style="width:100%;justify-content:center">保存设置</button>
+  </div>
+</div>
+
+<audio id="audioElement" preload="auto"></audio>
+
