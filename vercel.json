@@ -1,18 +1,1 @@
-{
-  "buildCommand": null,
-  "outputDirectory": ".",
-  "functions": {
-    "api/doubao.js": {
-      "maxDuration": 300
-    },
-    "api/bailian.js": {
-      "maxDuration": 300
-    },
-    "api/fangzhou.js": {
-      "maxDuration": 300
-    },
-    "api/proxy-url.js": {
-      "maxDuration": 60
-    }
-  }
-}
+{}
