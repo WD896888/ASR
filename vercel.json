@@ -12,9 +12,16 @@
     },
     "api/proxy-url.js": {
       "maxDuration": 60
-    },
-    "api/[...catch-all].js": {
-      "maxDuration": 30
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
 }
