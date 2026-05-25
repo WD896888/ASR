@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "functions": {
+    "api/doubao.js": {
+      "maxDuration": 300
+    },
+    "api/bailian.js": {
+      "maxDuration": 300
+    },
+    "api/fangzhou.js": {
+      "maxDuration": 300
+    },
+    "api/proxy-url.js": {
+      "maxDuration": 60
+    },
+    "api/[...catch-all].js": {
+      "maxDuration": 30
+    }
+  }
+}
