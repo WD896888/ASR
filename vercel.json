@@ -1,5 +1,6 @@
 {
-  "version": 2,
+  "buildCommand": null,
+  "outputDirectory": ".",
   "functions": {
     "api/doubao.js": {
       "maxDuration": 300
@@ -13,15 +14,5 @@
     "api/proxy-url.js": {
       "maxDuration": 60
     }
-  },
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ]
+  }
 }
